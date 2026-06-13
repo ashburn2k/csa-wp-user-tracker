@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.2
+ * Version: 0.1.3
  * Author: Hui Zhang
  * Text Domain: esnet-activity-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.2' );
+define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.3' );
 define( 'ESNET_ACTIVITY_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -28,7 +28,6 @@ final class ESnet_Activity_Tracker {
 	const CLEANUP_HOOK        = 'esnet_activity_tracker_daily_cleanup';
 	const DEFAULT_RETENTION   = 180;
 	const EXPORT_NONCE_ACTION = 'esnet_activity_tracker_export';
-	const UPDATE_NONCE_ACTION = 'csa_wp_user_tracker_refresh_update';
 
 	/**
 	 * Avoid recursive option logging while this plugin writes.
@@ -44,7 +43,6 @@ final class ESnet_Activity_Tracker {
 		add_action( 'init', array( __CLASS__, 'maybe_upgrade' ), 1 );
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
 		add_action( 'admin_init', array( __CLASS__, 'maybe_export_csv' ) );
-		add_action( 'admin_init', array( __CLASS__, 'maybe_refresh_update_status' ) );
 		add_action( 'admin_init', array( __CLASS__, 'maybe_log_ajax_request' ), 1 );
 		add_action( 'current_screen', array( __CLASS__, 'log_admin_screen' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'log_frontend_view' ), 999 );
@@ -202,19 +200,10 @@ final class ESnet_Activity_Tracker {
 			add_query_arg( 'esnet_activity_export', '1', $base_url ),
 			self::EXPORT_NONCE_ACTION
 		);
-		$update_status = class_exists( 'CSA_WP_User_Tracker_GitHub_Updater' ) ? CSA_WP_User_Tracker_GitHub_Updater::diagnostic_status() : array();
-		$refresh_url   = wp_nonce_url(
-			add_query_arg( 'csa_tracker_refresh_update', '1', menu_page_url( 'esnet-activity-log', false ) ),
-			self::UPDATE_NONCE_ACTION
-		);
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'CSA WP User Tracker', 'esnet-activity-tracker' ); ?></h1>
 			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'esnet-activity-tracker' ); ?></p>
-			<?php if ( ! empty( $_GET['csa_tracker_refreshed'] ) ) : ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'GitHub update check refreshed.', 'esnet-activity-tracker' ); ?></p></div>
-			<?php endif; ?>
-			<?php self::render_update_status( $update_status, $refresh_url ); ?>
 			<form method="get" style="margin: 16px 0 20px;">
 				<input type="hidden" name="page" value="esnet-activity-log">
 				<label>
@@ -323,67 +312,6 @@ final class ESnet_Activity_Tracker {
 					</div>
 				</div>
 			<?php endif; ?>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Refresh GitHub update status from the admin page.
-	 */
-	public static function maybe_refresh_update_status() {
-		if ( empty( $_GET['page'] ) || 'esnet-activity-log' !== sanitize_key( wp_unslash( $_GET['page'] ) ) || empty( $_GET['csa_tracker_refresh_update'] ) ) {
-			return;
-		}
-
-		if ( ! current_user_can( self::admin_capability() ) ) {
-			wp_die( esc_html__( 'You do not have permission to refresh plugin updates.', 'esnet-activity-tracker' ) );
-		}
-
-		check_admin_referer( self::UPDATE_NONCE_ACTION );
-
-		if ( class_exists( 'CSA_WP_User_Tracker_GitHub_Updater' ) ) {
-			CSA_WP_User_Tracker_GitHub_Updater::clear_cache();
-		}
-
-		wp_update_plugins();
-
-		wp_safe_redirect(
-			add_query_arg(
-				'csa_tracker_refreshed',
-				'1',
-				remove_query_arg( array( 'csa_tracker_refresh_update', '_wpnonce' ), menu_page_url( 'esnet-activity-log', false ) )
-			)
-		);
-		exit;
-	}
-
-	/**
-	 * Render safe updater diagnostics.
-	 *
-	 * @param array  $status Update status.
-	 * @param string $refresh_url Refresh URL.
-	 */
-	private static function render_update_status( $status, $refresh_url ) {
-		if ( empty( $status ) ) {
-			return;
-		}
-		?>
-		<div class="postbox" style="max-width: 900px; padding: 12px 16px; margin: 16px 0;">
-			<h2 style="margin-top: 0;"><?php esc_html_e( 'GitHub Update Status', 'esnet-activity-tracker' ); ?></h2>
-			<table class="widefat striped" style="max-width: 760px;">
-				<tbody>
-					<tr><th><?php esc_html_e( 'Installed version', 'esnet-activity-tracker' ); ?></th><td><?php echo esc_html( $status['installed_version'] ); ?></td></tr>
-					<tr><th><?php esc_html_e( 'Latest GitHub release', 'esnet-activity-tracker' ); ?></th><td><?php echo esc_html( $status['latest_version'] ? $status['latest_version'] : 'Not detected' ); ?></td></tr>
-					<tr><th><?php esc_html_e( 'Update available', 'esnet-activity-tracker' ); ?></th><td><?php echo $status['update_available'] ? esc_html__( 'Yes', 'esnet-activity-tracker' ) : esc_html__( 'No', 'esnet-activity-tracker' ); ?></td></tr>
-					<tr><th><?php esc_html_e( 'GitHub HTTP status', 'esnet-activity-tracker' ); ?></th><td><?php echo esc_html( $status['github_status'] ? $status['github_status'] : 'No response' ); ?></td></tr>
-					<tr><th><?php esc_html_e( 'GitHub token detected', 'esnet-activity-tracker' ); ?></th><td><?php echo $status['token_available'] ? esc_html__( 'Yes', 'esnet-activity-tracker' ) : esc_html__( 'No', 'esnet-activity-tracker' ); ?> <code><?php echo esc_html( $status['token_source'] ); ?></code></td></tr>
-					<tr><th><?php esc_html_e( 'Package URL type', 'esnet-activity-tracker' ); ?></th><td><?php echo esc_html( $status['package_type'] ? $status['package_type'] : 'Not available' ); ?></td></tr>
-					<?php if ( ! empty( $status['github_error'] ) ) : ?>
-						<tr><th><?php esc_html_e( 'GitHub error', 'esnet-activity-tracker' ); ?></th><td><?php echo esc_html( $status['github_error'] ); ?></td></tr>
-					<?php endif; ?>
-				</tbody>
-			</table>
-			<p><a class="button button-secondary" href="<?php echo esc_url( $refresh_url ); ?>"><?php esc_html_e( 'Refresh GitHub update check', 'esnet-activity-tracker' ); ?></a></p>
 		</div>
 		<?php
 	}
