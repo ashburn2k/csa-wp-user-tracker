@@ -149,6 +149,8 @@ final class ESnet_Activity_Tracker {
 
 		if ( ESNET_ACTIVITY_TRACKER_VERSION !== $installed_version ) {
 			self::activate();
+			delete_site_transient( 'update_plugins' );
+			wp_clean_plugins_cache( true );
 		}
 	}
 
