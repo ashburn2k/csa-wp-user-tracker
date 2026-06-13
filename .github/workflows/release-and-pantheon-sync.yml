@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Check out plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.3
 
       - name: Build plugin zip
         run: bin/build-zip.sh
