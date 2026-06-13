@@ -2,6 +2,16 @@
 
 Tracks logged-in WordPress activity for users whose roles are not limited to `subscriber`.
 
+## Development Notice
+
+Do not edit the Pantheon checkout copy directly at `wp-content/plugins/csa-wp-user-tracker`. Make plugin changes in this GitHub repository first:
+
+```text
+https://github.com/ashburn2k/csa-wp-user-tracker
+```
+
+Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pantheon.sh --commit --push`.
+
 ## What It Logs
 
 - Login, failed login, and logout for protected roles.
