@@ -39,7 +39,7 @@ if [[ "${COMMIT}" == "1" ]]; then
   if git -C "${PANTHEON_REPO}" diff --cached --quiet; then
     echo "No Pantheon plugin changes to commit."
   else
-    VERSION="$(grep -E '^[[:space:]]*\\*[[:space:]]*Version:' "${ROOT_DIR}/${PLUGIN_SLUG}.php" | sed -E 's/.*Version:[[:space:]]*//')"
+    VERSION="$(grep -E '^[[:space:]]*\*[[:space:]]*Version:' "${ROOT_DIR}/${PLUGIN_SLUG}.php" | sed -E 's/.*Version:[[:space:]]*//')"
     git -C "${PANTHEON_REPO}" commit -m "Update CSA WP User Tracker to ${VERSION}"
   fi
 fi
