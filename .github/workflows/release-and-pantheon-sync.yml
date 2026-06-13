@@ -1,0 +1,79 @@
+name: Release and Sync to Pantheon
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: csa-wp-user-tracker
+  PANTHEON_REMOTE: ssh://codeserver.dev.591d9eeb-69f9-4015-8bbd-156f68a7b0c1@codeserver.dev.591d9eeb-69f9-4015-8bbd-156f68a7b0c1.drush.in:2222/~/repository.git
+  PANTHEON_BRANCH: master
+  PANTHEON_HOST: codeserver.dev.591d9eeb-69f9-4015-8bbd-156f68a7b0c1.drush.in
+  PANTHEON_PORT: "2222"
+
+jobs:
+  release-and-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out plugin
+        uses: actions/checkout@v4
+
+      - name: Build plugin zip
+        run: bin/build-zip.sh
+
+      - name: Publish GitHub release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "${TAG}" >/dev/null 2>&1 || gh release create "${TAG}" --title "${TAG}" --notes "CSA WP User Tracker ${TAG}"
+          gh release upload "${TAG}" "dist/${PLUGIN_SLUG}.zip" --clobber
+
+      - name: Configure Pantheon SSH
+        env:
+          PANTHEON_SSH_PRIVATE_KEY: ${{ secrets.PANTHEON_SSH_PRIVATE_KEY }}
+        run: |
+          test -n "${PANTHEON_SSH_PRIVATE_KEY}"
+          mkdir -p ~/.ssh
+          printf '%s\n' "${PANTHEON_SSH_PRIVATE_KEY}" > ~/.ssh/pantheon
+          chmod 600 ~/.ssh/pantheon
+          ssh-keyscan -p "${PANTHEON_PORT}" "${PANTHEON_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Clone Pantheon repository
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
+        run: git clone --branch "${PANTHEON_BRANCH}" "${PANTHEON_REMOTE}" pantheon
+
+      - name: Sync plugin folder
+        run: |
+          mkdir -p "pantheon/wp-content/plugins/${PLUGIN_SLUG}"
+          rsync -a --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude ".gitignore" \
+            --exclude "bin" \
+            --exclude "dist" \
+            --exclude ".DS_Store" \
+            ./ "pantheon/wp-content/plugins/${PLUGIN_SLUG}/"
+
+      - name: Commit and push Pantheon update
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
+        run: |
+          cd pantheon
+          git config user.name "CSA WP User Tracker Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add "wp-content/plugins/${PLUGIN_SLUG}"
+          if git diff --cached --quiet; then
+            echo "No Pantheon changes to publish."
+            exit 0
+          fi
+          git commit -m "Update CSA WP User Tracker to ${GITHUB_REF_NAME:-manual}"
+          git push origin "${PANTHEON_BRANCH}"
