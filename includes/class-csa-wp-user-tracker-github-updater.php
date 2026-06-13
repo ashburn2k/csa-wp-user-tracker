@@ -138,6 +138,72 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 	}
 
 	/**
+	 * Clear cached update data.
+	 */
+	public static function clear_cache() {
+		delete_site_transient( self::CACHE_KEY );
+		delete_site_transient( 'update_plugins' );
+		wp_clean_plugins_cache( true );
+	}
+
+	/**
+	 * Build a safe diagnostics snapshot for admins.
+	 *
+	 * @return array
+	 */
+	public static function diagnostic_status() {
+		$token_data = self::github_token_data();
+		$response   = wp_remote_get(
+			self::REPO_API . '/releases/latest',
+			array(
+				'headers' => self::github_headers(),
+				'timeout' => 10,
+			)
+		);
+
+		$status = array(
+			'installed_version' => ESNET_ACTIVITY_TRACKER_VERSION,
+			'plugin_file'       => self::plugin_file(),
+			'token_available'   => '' !== $token_data['token'],
+			'token_source'      => $token_data['source'],
+			'github_status'     => '',
+			'github_error'      => '',
+			'latest_version'    => '',
+			'package_type'      => '',
+			'update_available'  => false,
+		);
+
+		if ( is_wp_error( $response ) ) {
+			$status['github_error'] = $response->get_error_message();
+			return $status;
+		}
+
+		$status['github_status'] = (int) wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $status['github_status'] ) {
+			$status['github_error'] = wp_remote_retrieve_response_message( $response );
+			return $status;
+		}
+
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $data ) || empty( $data['tag_name'] ) || empty( $data['assets'] ) ) {
+			$status['github_error'] = 'GitHub response did not include a release tag and asset list.';
+			return $status;
+		}
+
+		$asset = self::release_asset( $data['assets'] );
+		if ( ! $asset ) {
+			$status['github_error'] = 'GitHub release is missing ' . self::ASSET_NAME . '.';
+			return $status;
+		}
+
+		$status['latest_version']   = ltrim( sanitize_text_field( $data['tag_name'] ), 'vV' );
+		$status['package_type']     = self::github_token() && ! empty( $asset['url'] ) ? 'GitHub API asset' : 'Browser download URL';
+		$status['update_available'] = version_compare( $status['latest_version'], ESNET_ACTIVITY_TRACKER_VERSION, '>' );
+
+		return $status;
+	}
+
+	/**
 	 * Get the latest GitHub release, cached briefly to avoid rate limits.
 	 *
 	 * @return array|null
@@ -277,15 +343,37 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 	 * @return string
 	 */
 	private static function github_token() {
+		$token_data = self::github_token_data();
+		return $token_data['token'];
+	}
+
+	/**
+	 * Optional token and its source, without exposing the token.
+	 *
+	 * @return array
+	 */
+	private static function github_token_data() {
 		$token = '';
+		$source = 'none';
 		if ( defined( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) && CSA_WP_USER_TRACKER_GITHUB_TOKEN ) {
 			$token = CSA_WP_USER_TRACKER_GITHUB_TOKEN;
+			$source = 'constant';
 		} elseif ( function_exists( 'pantheon_get_secret' ) && pantheon_get_secret( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) ) {
 			$token = pantheon_get_secret( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' );
+			$source = 'pantheon_secret';
 		} elseif ( getenv( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) ) {
 			$token = getenv( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' );
+			$source = 'environment';
 		}
 
-		return trim( (string) apply_filters( 'csa_wp_user_tracker_github_token', $token ) );
+		$filtered_token = trim( (string) apply_filters( 'csa_wp_user_tracker_github_token', $token ) );
+		if ( '' === $token && '' !== $filtered_token ) {
+			$source = 'filter';
+		}
+
+		return array(
+			'token'  => $filtered_token,
+			'source' => $source,
+		);
 	}
 }
