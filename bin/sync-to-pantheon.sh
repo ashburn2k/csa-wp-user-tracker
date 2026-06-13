@@ -28,6 +28,7 @@ rsync -a --delete \
   --exclude ".gitignore" \
   --exclude "bin" \
   --exclude "dist" \
+  --exclude "pantheon" \
   --exclude ".DS_Store" \
   "${ROOT_DIR}/" "${TARGET_DIR}/"
 

@@ -49,25 +49,26 @@ jobs:
       - name: Clone Pantheon repository
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
-        run: git clone --branch "${PANTHEON_BRANCH}" "${PANTHEON_REMOTE}" pantheon
+        run: git clone --branch "${PANTHEON_BRANCH}" "${PANTHEON_REMOTE}" "${RUNNER_TEMP}/pantheon"
 
       - name: Sync plugin folder
         run: |
-          mkdir -p "pantheon/wp-content/plugins/${PLUGIN_SLUG}"
+          mkdir -p "${RUNNER_TEMP}/pantheon/wp-content/plugins/${PLUGIN_SLUG}"
           rsync -a --delete \
             --exclude ".git" \
             --exclude ".github" \
             --exclude ".gitignore" \
             --exclude "bin" \
             --exclude "dist" \
+            --exclude "pantheon" \
             --exclude ".DS_Store" \
-            ./ "pantheon/wp-content/plugins/${PLUGIN_SLUG}/"
+            ./ "${RUNNER_TEMP}/pantheon/wp-content/plugins/${PLUGIN_SLUG}/"
 
       - name: Commit and push Pantheon update
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
         run: |
-          cd pantheon
+          cd "${RUNNER_TEMP}/pantheon"
           git config user.name "CSA WP User Tracker Bot"
           git config user.email "actions@users.noreply.github.com"
           git add "wp-content/plugins/${PLUGIN_SLUG}"
