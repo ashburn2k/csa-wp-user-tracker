@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.3
+ * Version: 0.1.4
  * Author: Hui Zhang
  * Text Domain: esnet-activity-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.3' );
+define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.4' );
 define( 'ESNET_ACTIVITY_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -27,7 +27,9 @@ final class ESnet_Activity_Tracker {
 	const OPTION_VERSION      = 'esnet_activity_tracker_version';
 	const CLEANUP_HOOK        = 'esnet_activity_tracker_daily_cleanup';
 	const DEFAULT_RETENTION   = 180;
-	const EXPORT_NONCE_ACTION = 'esnet_activity_tracker_export';
+	const ADMIN_PAGE_SLUG     = 'csa-wp-user-tracker-log';
+	const EXPORT_QUERY_ARG    = 'csa_wp_user_tracker_export';
+	const EXPORT_NONCE_ACTION = 'csa_wp_user_tracker_export';
 
 	/**
 	 * Avoid recursive option logging while this plugin writes.
@@ -173,7 +175,7 @@ final class ESnet_Activity_Tracker {
 			__( 'CSA WP User Tracker', 'esnet-activity-tracker' ),
 			__( 'CSA WP User Tracker', 'esnet-activity-tracker' ),
 			self::admin_capability(),
-			'esnet-activity-log',
+			self::ADMIN_PAGE_SLUG,
 			array( __CLASS__, 'render_admin_page' )
 		);
 	}
@@ -197,9 +199,9 @@ final class ESnet_Activity_Tracker {
 		$total      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table_name} {$where['sql']}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$rows       = $wpdb->get_results( "SELECT * FROM {$table_name} {$where['sql']} ORDER BY occurred_at DESC, id DESC LIMIT " . absint( $per_page ) . ' OFFSET ' . absint( $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$total_pages = max( 1, (int) ceil( $total / $per_page ) );
-		$base_url    = remove_query_arg( array( 'paged', 'esnet_activity_export', '_wpnonce' ) );
+		$base_url    = remove_query_arg( array( 'paged', self::EXPORT_QUERY_ARG, '_wpnonce' ) );
 		$export_url  = wp_nonce_url(
-			add_query_arg( 'esnet_activity_export', '1', $base_url ),
+			add_query_arg( self::EXPORT_QUERY_ARG, '1', $base_url ),
 			self::EXPORT_NONCE_ACTION
 		);
 		?>
@@ -207,7 +209,7 @@ final class ESnet_Activity_Tracker {
 			<h1><?php esc_html_e( 'CSA WP User Tracker', 'esnet-activity-tracker' ); ?></h1>
 			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'esnet-activity-tracker' ); ?></p>
 			<form method="get" style="margin: 16px 0 20px;">
-				<input type="hidden" name="page" value="esnet-activity-log">
+				<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
 				<label>
 					<?php esc_html_e( 'User', 'esnet-activity-tracker' ); ?>
 					<input type="text" name="activity_user" value="<?php echo esc_attr( $filters['user'] ); ?>" placeholder="<?php esc_attr_e( 'ID or login', 'esnet-activity-tracker' ); ?>">
@@ -229,7 +231,7 @@ final class ESnet_Activity_Tracker {
 					<input type="date" name="activity_to" value="<?php echo esc_attr( $filters['to'] ); ?>">
 				</label>
 				<?php submit_button( __( 'Filter', 'esnet-activity-tracker' ), 'secondary', '', false ); ?>
-				<a class="button" href="<?php echo esc_url( menu_page_url( 'esnet-activity-log', false ) ); ?>"><?php esc_html_e( 'Reset', 'esnet-activity-tracker' ); ?></a>
+				<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'esnet-activity-tracker' ); ?></a>
 				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'esnet-activity-tracker' ); ?></a>
 			</form>
 			<p>
@@ -322,7 +324,7 @@ final class ESnet_Activity_Tracker {
 	 * Export filtered rows as CSV.
 	 */
 	public static function maybe_export_csv() {
-		if ( empty( $_GET['page'] ) || 'esnet-activity-log' !== sanitize_key( wp_unslash( $_GET['page'] ) ) || empty( $_GET['esnet_activity_export'] ) ) {
+		if ( empty( $_GET['page'] ) || self::ADMIN_PAGE_SLUG !== sanitize_key( wp_unslash( $_GET['page'] ) ) || empty( $_GET[ self::EXPORT_QUERY_ARG ] ) ) {
 			return;
 		}
 
@@ -340,7 +342,7 @@ final class ESnet_Activity_Tracker {
 
 		nocache_headers();
 		header( 'Content-Type: text/csv; charset=utf-8' );
-		header( 'Content-Disposition: attachment; filename=esnet-activity-log-' . gmdate( 'Ymd-His' ) . '.csv' );
+		header( 'Content-Disposition: attachment; filename=csa-wp-user-tracker-log-' . gmdate( 'Ymd-His' ) . '.csv' );
 
 		$output = fopen( 'php://output', 'w' );
 		fputcsv( $output, array( 'id', 'occurred_at', 'user_id', 'user_login', 'display_name', 'roles', 'action', 'object_type', 'object_id', 'object_name', 'request_method', 'request_uri', 'ip_hash', 'context' ) );
