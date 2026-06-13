@@ -84,3 +84,5 @@ The plugin checks GitHub releases for updates. Public repositories work without 
 ```php
 define( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN', 'github-token-with-release-access' );
 ```
+
+On Pantheon, create a site-owned secret named `CSA_WP_USER_TRACKER_GITHUB_TOKEN` with type `runtime` and scope `web`. The updater also reads this value with `pantheon_get_secret()`.

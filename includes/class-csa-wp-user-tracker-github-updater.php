@@ -149,7 +149,7 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 		}
 
 		$release = self::fetch_latest_release();
-		set_site_transient( self::CACHE_KEY, $release ? $release : array(), 3 * HOUR_IN_SECONDS );
+		set_site_transient( self::CACHE_KEY, $release ? $release : array(), $release ? 3 * HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
 
 		return $release;
 	}
@@ -280,6 +280,8 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 		$token = '';
 		if ( defined( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) && CSA_WP_USER_TRACKER_GITHUB_TOKEN ) {
 			$token = CSA_WP_USER_TRACKER_GITHUB_TOKEN;
+		} elseif ( function_exists( 'pantheon_get_secret' ) && pantheon_get_secret( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) ) {
+			$token = pantheon_get_secret( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' );
 		} elseif ( getenv( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' ) ) {
 			$token = getenv( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN' );
 		}
