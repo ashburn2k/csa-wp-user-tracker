@@ -58,3 +58,9 @@ PANTHEON_SSH_PRIVATE_KEY
 ```
 
 Use the private key whose public key is already added to Pantheon for this site.
+
+To set that secret from this machine:
+
+```bash
+bin/setup-github-secret.sh
+```
