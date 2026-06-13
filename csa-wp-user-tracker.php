@@ -3,33 +3,35 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.4
+ * Version: 0.1.5
  * Author: Hui Zhang
- * Text Domain: esnet-activity-tracker
+ * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
  *
- * @package ESnet_Activity_Tracker
+ * @package CSA_WP_User_Tracker
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.4' );
-define( 'ESNET_ACTIVITY_TRACKER_FILE', __FILE__ );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.5' );
+define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
 
 /**
  * Role-aware activity logger.
  */
-final class ESnet_Activity_Tracker {
-	const OPTION_VERSION      = 'esnet_activity_tracker_version';
-	const CLEANUP_HOOK        = 'esnet_activity_tracker_daily_cleanup';
-	const DEFAULT_RETENTION   = 180;
-	const ADMIN_PAGE_SLUG     = 'csa-wp-user-tracker-log';
-	const EXPORT_QUERY_ARG    = 'csa_wp_user_tracker_export';
-	const EXPORT_NONCE_ACTION = 'csa_wp_user_tracker_export';
+final class CSA_WP_User_Tracker {
+	const OPTION_VERSION        = 'csa_wp_user_tracker_version';
+	const CLEANUP_HOOK          = 'csa_wp_user_tracker_daily_cleanup';
+	const DEFAULT_RETENTION     = 180;
+	const ADMIN_PAGE_SLUG       = 'csa-wp-user-tracker-log';
+	const EXPORT_QUERY_ARG      = 'csa_wp_user_tracker_export';
+	const EXPORT_NONCE_ACTION   = 'csa_wp_user_tracker_export';
+	const LEGACY_OPTION_VERSION = 'esnet_activity_tracker_version';
+	const LEGACY_CLEANUP_HOOK   = 'esnet_activity_tracker_daily_cleanup';
 
 	/**
 	 * Avoid recursive option logging while this plugin writes.
@@ -105,6 +107,8 @@ final class ESnet_Activity_Tracker {
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+		self::migrate_legacy_storage();
+
 		$sql = "CREATE TABLE {$table_name} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			occurred_at datetime NOT NULL,
@@ -129,7 +133,7 @@ final class ESnet_Activity_Tracker {
 		) {$charset_collate};";
 
 		dbDelta( $sql );
-		self::write_option( self::OPTION_VERSION, ESNET_ACTIVITY_TRACKER_VERSION );
+		self::write_option( self::OPTION_VERSION, CSA_WP_USER_TRACKER_VERSION );
 		self::schedule_cleanup();
 	}
 
@@ -137,10 +141,8 @@ final class ESnet_Activity_Tracker {
 	 * Unschedule cleanup on deactivation. Logs are intentionally retained.
 	 */
 	public static function deactivate() {
-		$timestamp = wp_next_scheduled( self::CLEANUP_HOOK );
-		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, self::CLEANUP_HOOK );
-		}
+		self::unschedule_cleanup_hook( self::CLEANUP_HOOK );
+		self::unschedule_cleanup_hook( self::LEGACY_CLEANUP_HOOK );
 	}
 
 	/**
@@ -149,7 +151,7 @@ final class ESnet_Activity_Tracker {
 	public static function maybe_upgrade() {
 		$installed_version = get_option( self::OPTION_VERSION );
 
-		if ( ESNET_ACTIVITY_TRACKER_VERSION !== $installed_version ) {
+		if ( CSA_WP_USER_TRACKER_VERSION !== $installed_version ) {
 			self::activate();
 			delete_site_transient( 'update_plugins' );
 			wp_clean_plugins_cache( true );
@@ -164,7 +166,64 @@ final class ESnet_Activity_Tracker {
 	public static function table_name() {
 		global $wpdb;
 
+		return $wpdb->prefix . 'csa_wp_user_tracker_log';
+	}
+
+	/**
+	 * Get the pre-rename table name.
+	 *
+	 * @return string
+	 */
+	private static function legacy_table_name() {
+		global $wpdb;
+
 		return $wpdb->prefix . 'esnet_activity_log';
+	}
+
+	/**
+	 * Move legacy storage to CSA names during the first renamed update.
+	 */
+	private static function migrate_legacy_storage() {
+		global $wpdb;
+
+		$table_name   = self::table_name();
+		$legacy_table = self::legacy_table_name();
+
+		if ( $table_name !== $legacy_table && ! self::table_exists( $table_name ) && self::table_exists( $legacy_table ) ) {
+			$wpdb->query( 'RENAME TABLE ' . self::quoted_table_name( $legacy_table ) . ' TO ' . self::quoted_table_name( $table_name ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		$legacy_version = get_option( self::LEGACY_OPTION_VERSION, false );
+		if ( false === get_option( self::OPTION_VERSION, false ) && false !== $legacy_version ) {
+			self::write_option( self::OPTION_VERSION, $legacy_version );
+		}
+
+		self::delete_option_without_log( self::LEGACY_OPTION_VERSION );
+		self::unschedule_cleanup_hook( self::LEGACY_CLEANUP_HOOK );
+	}
+
+	/**
+	 * Check if a database table exists.
+	 *
+	 * @param string $table_name Table name.
+	 * @return bool
+	 */
+	private static function table_exists( $table_name ) {
+		global $wpdb;
+
+		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table_name ) ) );
+
+		return $table_name === $found;
+	}
+
+	/**
+	 * Escape a table identifier for SQL.
+	 *
+	 * @param string $table_name Table name.
+	 * @return string
+	 */
+	private static function quoted_table_name( $table_name ) {
+		return '`' . str_replace( '`', '``', $table_name ) . '`';
 	}
 
 	/**
@@ -172,8 +231,8 @@ final class ESnet_Activity_Tracker {
 	 */
 	public static function register_admin_page() {
 		add_management_page(
-			__( 'CSA WP User Tracker', 'esnet-activity-tracker' ),
-			__( 'CSA WP User Tracker', 'esnet-activity-tracker' ),
+			__( 'CSA WP User Tracker', 'csa-wp-user-tracker' ),
+			__( 'CSA WP User Tracker', 'csa-wp-user-tracker' ),
 			self::admin_capability(),
 			self::ADMIN_PAGE_SLUG,
 			array( __CLASS__, 'render_admin_page' )
@@ -185,7 +244,7 @@ final class ESnet_Activity_Tracker {
 	 */
 	public static function render_admin_page() {
 		if ( ! current_user_can( self::admin_capability() ) ) {
-			wp_die( esc_html__( 'You do not have permission to view activity logs.', 'esnet-activity-tracker' ) );
+			wp_die( esc_html__( 'You do not have permission to view activity logs.', 'csa-wp-user-tracker' ) );
 		}
 
 		global $wpdb;
@@ -206,39 +265,39 @@ final class ESnet_Activity_Tracker {
 		);
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'CSA WP User Tracker', 'esnet-activity-tracker' ); ?></h1>
-			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'esnet-activity-tracker' ); ?></p>
+			<h1><?php esc_html_e( 'CSA WP User Tracker', 'csa-wp-user-tracker' ); ?></h1>
+			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'csa-wp-user-tracker' ); ?></p>
 			<form method="get" style="margin: 16px 0 20px;">
 				<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
 				<label>
-					<?php esc_html_e( 'User', 'esnet-activity-tracker' ); ?>
-					<input type="text" name="activity_user" value="<?php echo esc_attr( $filters['user'] ); ?>" placeholder="<?php esc_attr_e( 'ID or login', 'esnet-activity-tracker' ); ?>">
+					<?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?>
+					<input type="text" name="activity_user" value="<?php echo esc_attr( $filters['user'] ); ?>" placeholder="<?php esc_attr_e( 'ID or login', 'csa-wp-user-tracker' ); ?>">
 				</label>
 				<label>
-					<?php esc_html_e( 'Action', 'esnet-activity-tracker' ); ?>
+					<?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?>
 					<input type="text" name="activity_action" value="<?php echo esc_attr( $filters['action'] ); ?>" placeholder="post_updated">
 				</label>
 				<label>
-					<?php esc_html_e( 'Object Type', 'esnet-activity-tracker' ); ?>
+					<?php esc_html_e( 'Object Type', 'csa-wp-user-tracker' ); ?>
 					<input type="text" name="activity_object_type" value="<?php echo esc_attr( $filters['object_type'] ); ?>" placeholder="post">
 				</label>
 				<label>
-					<?php esc_html_e( 'From', 'esnet-activity-tracker' ); ?>
+					<?php esc_html_e( 'From', 'csa-wp-user-tracker' ); ?>
 					<input type="date" name="activity_from" value="<?php echo esc_attr( $filters['from'] ); ?>">
 				</label>
 				<label>
-					<?php esc_html_e( 'To', 'esnet-activity-tracker' ); ?>
+					<?php esc_html_e( 'To', 'csa-wp-user-tracker' ); ?>
 					<input type="date" name="activity_to" value="<?php echo esc_attr( $filters['to'] ); ?>">
 				</label>
-				<?php submit_button( __( 'Filter', 'esnet-activity-tracker' ), 'secondary', '', false ); ?>
-				<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'esnet-activity-tracker' ); ?></a>
-				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'esnet-activity-tracker' ); ?></a>
+				<?php submit_button( __( 'Filter', 'csa-wp-user-tracker' ), 'secondary', '', false ); ?>
+				<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'csa-wp-user-tracker' ); ?></a>
+				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'csa-wp-user-tracker' ); ?></a>
 			</form>
 			<p>
 				<?php
 				printf(
 					/* translators: 1: total rows, 2: current page, 3: total pages */
-					esc_html__( '%1$d logged activities. Page %2$d of %3$d.', 'esnet-activity-tracker' ),
+					esc_html__( '%1$d logged activities. Page %2$d of %3$d.', 'csa-wp-user-tracker' ),
 					absint( $total ),
 					absint( $page ),
 					absint( $total_pages )
@@ -248,18 +307,18 @@ final class ESnet_Activity_Tracker {
 			<table class="widefat striped">
 				<thead>
 					<tr>
-						<th><?php esc_html_e( 'Time', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'User', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Roles', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Action', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Object', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Request', 'esnet-activity-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Context', 'esnet-activity-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Time', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Object', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Request', 'csa-wp-user-tracker' ); ?></th>
+						<th><?php esc_html_e( 'Context', 'csa-wp-user-tracker' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $rows ) ) : ?>
-						<tr><td colspan="7"><?php esc_html_e( 'No activity found.', 'esnet-activity-tracker' ); ?></td></tr>
+						<tr><td colspan="7"><?php esc_html_e( 'No activity found.', 'csa-wp-user-tracker' ); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ( $rows as $row ) : ?>
 							<tr>
@@ -286,7 +345,7 @@ final class ESnet_Activity_Tracker {
 								<td>
 									<?php if ( $row->context ) : ?>
 										<details>
-											<summary><?php esc_html_e( 'View', 'esnet-activity-tracker' ); ?></summary>
+											<summary><?php esc_html_e( 'View', 'csa-wp-user-tracker' ); ?></summary>
 											<pre style="max-width: 360px; white-space: pre-wrap;"><?php echo esc_html( self::pretty_json( $row->context ) ); ?></pre>
 										</details>
 									<?php endif; ?>
@@ -307,8 +366,8 @@ final class ESnet_Activity_Tracker {
 									'format'    => '',
 									'current'   => $page,
 									'total'     => $total_pages,
-									'prev_text' => __( '&laquo;', 'esnet-activity-tracker' ),
-									'next_text' => __( '&raquo;', 'esnet-activity-tracker' ),
+									'prev_text' => __( '&laquo;', 'csa-wp-user-tracker' ),
+									'next_text' => __( '&raquo;', 'csa-wp-user-tracker' ),
 								)
 							)
 						);
@@ -329,7 +388,7 @@ final class ESnet_Activity_Tracker {
 		}
 
 		if ( ! current_user_can( self::admin_capability() ) ) {
-			wp_die( esc_html__( 'You do not have permission to export activity logs.', 'esnet-activity-tracker' ) );
+			wp_die( esc_html__( 'You do not have permission to export activity logs.', 'csa-wp-user-tracker' ) );
 		}
 
 		check_admin_referer( self::EXPORT_NONCE_ACTION );
@@ -959,7 +1018,7 @@ final class ESnet_Activity_Tracker {
 		 * @param WP_User $user User.
 		 * @param array   $roles User roles.
 		 */
-		return (bool) apply_filters( 'esnet_activity_tracker_should_track_user', $track, $user, $roles );
+		return (bool) apply_filters( 'csa_wp_user_tracker_should_track_user', $track, $user, $roles );
 	}
 
 	/**
@@ -968,7 +1027,7 @@ final class ESnet_Activity_Tracker {
 	 * @return string
 	 */
 	private static function admin_capability() {
-		return (string) apply_filters( 'esnet_activity_tracker_admin_capability', 'manage_options' );
+		return (string) apply_filters( 'csa_wp_user_tracker_admin_capability', 'manage_options' );
 	}
 
 	/**
@@ -994,6 +1053,7 @@ final class ESnet_Activity_Tracker {
 	private static function is_ignored_option( $option ) {
 		$ignored_exact = array(
 			self::OPTION_VERSION,
+			self::LEGACY_OPTION_VERSION,
 			'cron',
 			'rewrite_rules',
 			'recently_edited',
@@ -1015,7 +1075,7 @@ final class ESnet_Activity_Tracker {
 			}
 		}
 
-		return (bool) apply_filters( 'esnet_activity_tracker_ignore_option', false, $option );
+		return (bool) apply_filters( 'csa_wp_user_tracker_ignore_option', false, $option );
 	}
 
 	/**
@@ -1205,12 +1265,21 @@ final class ESnet_Activity_Tracker {
 	}
 
 	/**
+	 * Unschedule all cleanup events for a hook.
+	 *
+	 * @param string $hook Cron hook.
+	 */
+	private static function unschedule_cleanup_hook( $hook ) {
+		wp_clear_scheduled_hook( $hook );
+	}
+
+	/**
 	 * Delete old log rows.
 	 */
 	public static function cleanup_old_logs() {
 		global $wpdb;
 
-		$retention_days = (int) apply_filters( 'esnet_activity_tracker_retention_days', self::DEFAULT_RETENTION );
+		$retention_days = (int) apply_filters( 'csa_wp_user_tracker_retention_days', self::DEFAULT_RETENTION );
 		if ( $retention_days < 1 ) {
 			return;
 		}
@@ -1227,12 +1296,29 @@ final class ESnet_Activity_Tracker {
 	 */
 	private static function write_option( $option, $value ) {
 		self::$writing = true;
-		update_option( $option, $value, false );
-		self::$writing = false;
+		try {
+			update_option( $option, $value, false );
+		} finally {
+			self::$writing = false;
+		}
+	}
+
+	/**
+	 * Delete an option without generating a log row.
+	 *
+	 * @param string $option Option.
+	 */
+	private static function delete_option_without_log( $option ) {
+		self::$writing = true;
+		try {
+			delete_option( $option );
+		} finally {
+			self::$writing = false;
+		}
 	}
 }
 
-register_activation_hook( __FILE__, array( 'ESnet_Activity_Tracker', 'activate' ) );
-register_deactivation_hook( __FILE__, array( 'ESnet_Activity_Tracker', 'deactivate' ) );
+register_activation_hook( __FILE__, array( 'CSA_WP_User_Tracker', 'activate' ) );
+register_deactivation_hook( __FILE__, array( 'CSA_WP_User_Tracker', 'deactivate' ) );
 add_action( 'plugins_loaded', array( 'CSA_WP_User_Tracker_GitHub_Updater', 'init' ) );
-add_action( 'plugins_loaded', array( 'ESnet_Activity_Tracker', 'init' ) );
+add_action( 'plugins_loaded', array( 'CSA_WP_User_Tracker', 'init' ) );

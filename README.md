@@ -28,11 +28,11 @@ Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pan
 - Raw IP addresses are not stored. The plugin stores an HMAC hash using the WordPress auth salt.
 - Request bodies, cookies, passwords, nonces, tokens, and secret-like values are not stored.
 - Option values are not stored.
-- Logs are retained for 180 days by default. Use the `esnet_activity_tracker_retention_days` filter to change retention.
+- Logs are retained for 180 days by default. Use the `csa_wp_user_tracker_retention_days` filter to change retention.
 
 ## Admin UI
 
-After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_options` by default. Use the `esnet_activity_tracker_admin_capability` filter to change the capability.
+After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_options` by default. Use the `csa_wp_user_tracker_admin_capability` filter to change the capability.
 
 ## Release Workflow
 

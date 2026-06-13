@@ -2,7 +2,7 @@
 /**
  * GitHub release updater for CSA WP User Tracker.
  *
- * @package ESnet_Activity_Tracker
+ * @package CSA_WP_User_Tracker
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -45,7 +45,7 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 		}
 
 		$plugin_file = self::plugin_file();
-		if ( version_compare( $release['version'], ESNET_ACTIVITY_TRACKER_VERSION, '>' ) ) {
+		if ( version_compare( $release['version'], CSA_WP_USER_TRACKER_VERSION, '>' ) ) {
 			$transient->response[ $plugin_file ] = self::update_object( $release );
 		} else {
 			$transient->no_update[ $plugin_file ] = self::update_object( $release );
@@ -247,7 +247,7 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 	 * @return string
 	 */
 	private static function plugin_file() {
-		return plugin_basename( ESNET_ACTIVITY_TRACKER_FILE );
+		return plugin_basename( CSA_WP_USER_TRACKER_FILE );
 	}
 
 	/**
@@ -259,7 +259,7 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 	private static function github_headers( $download_asset = false ) {
 		$headers = array(
 			'Accept'               => $download_asset ? 'application/octet-stream' : 'application/vnd.github+json',
-			'User-Agent'           => 'CSA-WP-User-Tracker/' . ESNET_ACTIVITY_TRACKER_VERSION,
+			'User-Agent'           => 'CSA-WP-User-Tracker/' . CSA_WP_USER_TRACKER_VERSION,
 			'X-GitHub-Api-Version' => '2022-11-28',
 		);
 
