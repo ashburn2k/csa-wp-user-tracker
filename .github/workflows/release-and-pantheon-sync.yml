@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      sync_pantheon:
+        description: "Sync this plugin source into Pantheon Git"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -37,6 +43,7 @@ jobs:
           gh release upload "${TAG}" "dist/${PLUGIN_SLUG}.zip" --clobber
 
       - name: Configure Pantheon SSH
+        if: github.event_name == 'workflow_dispatch' && inputs.sync_pantheon
         env:
           PANTHEON_SSH_PRIVATE_KEY: ${{ secrets.PANTHEON_SSH_PRIVATE_KEY }}
         run: |
@@ -47,11 +54,13 @@ jobs:
           ssh-keyscan -p "${PANTHEON_PORT}" "${PANTHEON_HOST}" >> ~/.ssh/known_hosts
 
       - name: Clone Pantheon repository
+        if: github.event_name == 'workflow_dispatch' && inputs.sync_pantheon
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
         run: git clone --branch "${PANTHEON_BRANCH}" "${PANTHEON_REMOTE}" "${RUNNER_TEMP}/pantheon"
 
       - name: Sync plugin folder
+        if: github.event_name == 'workflow_dispatch' && inputs.sync_pantheon
         run: |
           mkdir -p "${RUNNER_TEMP}/pantheon/wp-content/plugins/${PLUGIN_SLUG}"
           rsync -a --delete \
@@ -65,6 +74,7 @@ jobs:
             ./ "${RUNNER_TEMP}/pantheon/wp-content/plugins/${PLUGIN_SLUG}/"
 
       - name: Commit and push Pantheon update
+        if: github.event_name == 'workflow_dispatch' && inputs.sync_pantheon
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/pantheon -o IdentitiesOnly=yes
         run: |

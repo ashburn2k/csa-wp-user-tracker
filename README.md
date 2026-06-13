@@ -61,7 +61,9 @@ git tag v0.1.2
 git push origin v0.1.2
 ```
 
-The `Release and Sync to Pantheon` workflow builds a release ZIP, uploads it to the GitHub release, then pushes the plugin folder into the Pantheon Git repository. The GitHub repository must have this secret:
+Tag pushes build a release ZIP and upload it to the GitHub release. To sync the installed Pantheon copy, run the `Release and Sync to Pantheon` workflow manually with `sync_pantheon` enabled.
+
+The GitHub repository must have this secret for Pantheon sync:
 
 ```text
 PANTHEON_SSH_PRIVATE_KEY
@@ -73,4 +75,12 @@ To set that secret from this machine:
 
 ```bash
 bin/setup-github-secret.sh
+```
+
+## WordPress Update Checks
+
+The plugin checks GitHub releases for updates. Public repositories work without extra setup. For a private GitHub repository, define this token on the WordPress site before testing plugin updates from WP Admin:
+
+```php
+define( 'CSA_WP_USER_TRACKER_GITHUB_TOKEN', 'github-token-with-release-access' );
 ```

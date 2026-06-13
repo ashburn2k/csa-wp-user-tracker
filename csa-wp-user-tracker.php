@@ -18,6 +18,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'ESNET_ACTIVITY_TRACKER_VERSION', '0.1.1' );
 define( 'ESNET_ACTIVITY_TRACKER_FILE', __FILE__ );
 
+require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
+
 /**
  * Role-aware activity logger.
  */
@@ -1228,4 +1230,5 @@ final class ESnet_Activity_Tracker {
 
 register_activation_hook( __FILE__, array( 'ESnet_Activity_Tracker', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'ESnet_Activity_Tracker', 'deactivate' ) );
+add_action( 'plugins_loaded', array( 'CSA_WP_User_Tracker_GitHub_Updater', 'init' ) );
 add_action( 'plugins_loaded', array( 'ESnet_Activity_Tracker', 'init' ) );
