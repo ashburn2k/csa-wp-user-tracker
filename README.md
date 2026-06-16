@@ -34,6 +34,18 @@ Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pan
 
 After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_options` by default. Use the `csa_wp_user_tracker_admin_capability` filter to change the capability.
 
+### Email Updates
+
+The admin page includes email update rules for content updates. Enable email updates, add one or more recipients, and choose whether to watch post updates, page updates, or both. Matching can be scoped to any tracked user, one user by ID/login/email, or selected roles.
+
+Delivery can be set to:
+
+- **Once triggered**: sends an email immediately after a matching `post_updated` event is logged.
+- **Daily digest**: queues matching events and sends them through WP-Cron once per day.
+- **Weekly digest**: queues matching events and sends them through WP-Cron once per week.
+
+The digest queue and email settings are stored in WordPress options and are excluded from activity logging.
+
 ## Release Workflow
 
 This repository is the source of truth for the plugin. The Pantheon site receives a copy at:

@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.5
+ * Version: 0.1.6
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.5' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.6' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -24,14 +24,21 @@ require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
  * Role-aware activity logger.
  */
 final class CSA_WP_User_Tracker {
-	const OPTION_VERSION        = 'csa_wp_user_tracker_version';
-	const CLEANUP_HOOK          = 'csa_wp_user_tracker_daily_cleanup';
-	const DEFAULT_RETENTION     = 180;
-	const ADMIN_PAGE_SLUG       = 'csa-wp-user-tracker-log';
-	const EXPORT_QUERY_ARG      = 'csa_wp_user_tracker_export';
-	const EXPORT_NONCE_ACTION   = 'csa_wp_user_tracker_export';
-	const LEGACY_OPTION_VERSION = 'esnet_activity_tracker_version';
-	const LEGACY_CLEANUP_HOOK   = 'esnet_activity_tracker_daily_cleanup';
+	const OPTION_VERSION              = 'csa_wp_user_tracker_version';
+	const CLEANUP_HOOK                = 'csa_wp_user_tracker_daily_cleanup';
+	const DEFAULT_RETENTION           = 180;
+	const ADMIN_PAGE_SLUG             = 'csa-wp-user-tracker-log';
+	const EXPORT_QUERY_ARG            = 'csa_wp_user_tracker_export';
+	const EXPORT_NONCE_ACTION         = 'csa_wp_user_tracker_export';
+	const LEGACY_OPTION_VERSION       = 'esnet_activity_tracker_version';
+	const LEGACY_CLEANUP_HOOK         = 'esnet_activity_tracker_daily_cleanup';
+	const OPTION_EMAIL_SETTINGS       = 'csa_wp_user_tracker_email_settings';
+	const OPTION_EMAIL_QUEUE          = 'csa_wp_user_tracker_email_queue';
+	const OPTION_EMAIL_LAST_SENT      = 'csa_wp_user_tracker_email_last_sent';
+	const EMAIL_DIGEST_HOOK           = 'csa_wp_user_tracker_email_digest';
+	const EMAIL_WEEKLY_RECURRENCE     = 'csa_wp_user_tracker_weekly';
+	const EMAIL_SETTINGS_NONCE_ACTION = 'csa_wp_user_tracker_email_settings';
+	const EMAIL_QUEUE_LIMIT           = 1000;
 
 	/**
 	 * Avoid recursive option logging while this plugin writes.
@@ -47,10 +54,14 @@ final class CSA_WP_User_Tracker {
 		add_action( 'init', array( __CLASS__, 'maybe_upgrade' ), 1 );
 		add_action( 'admin_menu', array( __CLASS__, 'register_admin_page' ) );
 		add_action( 'admin_init', array( __CLASS__, 'maybe_export_csv' ) );
+		add_action( 'admin_init', array( __CLASS__, 'maybe_save_email_settings' ) );
 		add_action( 'admin_init', array( __CLASS__, 'maybe_log_ajax_request' ), 1 );
 		add_action( 'current_screen', array( __CLASS__, 'log_admin_screen' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'log_frontend_view' ), 999 );
 		add_action( self::CLEANUP_HOOK, array( __CLASS__, 'cleanup_old_logs' ) );
+		add_action( self::EMAIL_DIGEST_HOOK, array( __CLASS__, 'send_scheduled_email_digest' ) );
+		add_action( 'init', array( __CLASS__, 'ensure_email_digest_schedule' ), 20 );
+		add_filter( 'cron_schedules', array( __CLASS__, 'add_cron_schedules' ) );
 
 		add_action( 'wp_login', array( __CLASS__, 'log_login' ), 10, 2 );
 		add_action( 'wp_login_failed', array( __CLASS__, 'log_failed_login' ) );
@@ -135,6 +146,7 @@ final class CSA_WP_User_Tracker {
 		dbDelta( $sql );
 		self::write_option( self::OPTION_VERSION, CSA_WP_USER_TRACKER_VERSION );
 		self::schedule_cleanup();
+		self::ensure_email_digest_schedule();
 	}
 
 	/**
@@ -143,6 +155,7 @@ final class CSA_WP_User_Tracker {
 	public static function deactivate() {
 		self::unschedule_cleanup_hook( self::CLEANUP_HOOK );
 		self::unschedule_cleanup_hook( self::LEGACY_CLEANUP_HOOK );
+		wp_clear_scheduled_hook( self::EMAIL_DIGEST_HOOK );
 	}
 
 	/**
@@ -267,6 +280,8 @@ final class CSA_WP_User_Tracker {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'CSA WP User Tracker', 'csa-wp-user-tracker' ); ?></h1>
 			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'csa-wp-user-tracker' ); ?></p>
+			<?php self::render_email_settings_notices(); ?>
+			<?php self::render_email_settings_form(); ?>
 			<form method="get" style="margin: 16px 0 20px;">
 				<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
 				<label>
@@ -377,6 +392,200 @@ final class CSA_WP_User_Tracker {
 			<?php endif; ?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render email settings notices.
+	 */
+	private static function render_email_settings_notices() {
+		$notice = isset( $_GET['csa_email_notice'] ) ? sanitize_key( wp_unslash( $_GET['csa_email_notice'] ) ) : '';
+		if ( '' === $notice ) {
+			return;
+		}
+
+		$messages = array(
+			'saved'         => __( 'Email update settings saved.', 'csa-wp-user-tracker' ),
+			'digest_sent'   => __( 'Pending email digest sent.', 'csa-wp-user-tracker' ),
+			'digest_empty'  => __( 'There are no pending email updates to send.', 'csa-wp-user-tracker' ),
+			'digest_failed' => __( 'The pending email digest could not be sent.', 'csa-wp-user-tracker' ),
+		);
+
+		if ( empty( $messages[ $notice ] ) ) {
+			return;
+		}
+
+		$class = 'digest_failed' === $notice ? 'notice notice-error is-dismissible' : 'notice notice-success is-dismissible';
+		?>
+		<div class="<?php echo esc_attr( $class ); ?>">
+			<p><?php echo esc_html( $messages[ $notice ] ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render email update settings.
+	 */
+	private static function render_email_settings_form() {
+		$settings       = self::email_settings();
+		$roles          = wp_roles();
+		$editable_roles = $roles ? $roles->roles : array();
+		$queue_count    = count( self::email_queue() );
+		$next_digest    = wp_next_scheduled( self::EMAIL_DIGEST_HOOK );
+		?>
+		<h2><?php esc_html_e( 'Email Updates', 'csa-wp-user-tracker' ); ?></h2>
+		<form method="post" style="max-width: 900px;">
+			<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+			<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="save">
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Email updates', 'csa-wp-user-tracker' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="csa_email_enabled" value="1" <?php checked( $settings['enabled'] ); ?>>
+								<?php esc_html_e( 'Send email updates for matching content updates.', 'csa-wp-user-tracker' ); ?>
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="csa-email-recipients"><?php esc_html_e( 'Recipients', 'csa-wp-user-tracker' ); ?></label></th>
+						<td>
+							<input type="text" class="regular-text" id="csa-email-recipients" name="csa_email_recipients" value="<?php echo esc_attr( implode( ', ', $settings['recipients'] ) ); ?>" placeholder="<?php echo esc_attr( get_option( 'admin_email' ) ); ?>">
+							<p class="description"><?php esc_html_e( 'Separate multiple email addresses with commas.', 'csa-wp-user-tracker' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Events', 'csa-wp-user-tracker' ); ?></th>
+						<td>
+							<label style="margin-right: 16px;">
+								<input type="checkbox" name="csa_email_post_types[]" value="post" <?php checked( in_array( 'post', $settings['post_types'], true ) ); ?>>
+								<?php esc_html_e( 'Post updates', 'csa-wp-user-tracker' ); ?>
+							</label>
+							<label>
+								<input type="checkbox" name="csa_email_post_types[]" value="page" <?php checked( in_array( 'page', $settings['post_types'], true ) ); ?>>
+								<?php esc_html_e( 'Page updates', 'csa-wp-user-tracker' ); ?>
+							</label>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="csa-email-scope"><?php esc_html_e( 'Actor filter', 'csa-wp-user-tracker' ); ?></label></th>
+						<td>
+							<select id="csa-email-scope" name="csa_email_scope">
+								<option value="any" <?php selected( $settings['scope'], 'any' ); ?>><?php esc_html_e( 'Any tracked user', 'csa-wp-user-tracker' ); ?></option>
+								<option value="user" <?php selected( $settings['scope'], 'user' ); ?>><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></option>
+								<option value="roles" <?php selected( $settings['scope'], 'roles' ); ?>><?php esc_html_e( 'Selected roles', 'csa-wp-user-tracker' ); ?></option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="csa-email-actor-user"><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></label></th>
+						<td>
+							<input type="text" class="regular-text" id="csa-email-actor-user" name="csa_email_actor_user" value="<?php echo esc_attr( $settings['actor_user'] ); ?>" placeholder="<?php esc_attr_e( 'User ID, login, or email', 'csa-wp-user-tracker' ); ?>">
+							<p class="description"><?php esc_html_e( 'Used only when Actor filter is set to One user.', 'csa-wp-user-tracker' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></th>
+						<td>
+							<?php foreach ( $editable_roles as $role_key => $role_data ) : ?>
+								<label style="display: inline-block; margin: 0 16px 8px 0;">
+									<input type="checkbox" name="csa_email_roles[]" value="<?php echo esc_attr( $role_key ); ?>" <?php checked( in_array( $role_key, $settings['roles'], true ) ); ?>>
+									<?php echo esc_html( translate_user_role( $role_data['name'] ) ); ?>
+								</label>
+							<?php endforeach; ?>
+							<p class="description"><?php esc_html_e( 'Used only when Actor filter is set to Selected roles.', 'csa-wp-user-tracker' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="csa-email-cadence"><?php esc_html_e( 'Send timing', 'csa-wp-user-tracker' ); ?></label></th>
+						<td>
+							<select id="csa-email-cadence" name="csa_email_cadence">
+								<option value="immediate" <?php selected( $settings['cadence'], 'immediate' ); ?>><?php esc_html_e( 'Once triggered', 'csa-wp-user-tracker' ); ?></option>
+								<option value="daily" <?php selected( $settings['cadence'], 'daily' ); ?>><?php esc_html_e( 'Daily digest', 'csa-wp-user-tracker' ); ?></option>
+								<option value="weekly" <?php selected( $settings['cadence'], 'weekly' ); ?>><?php esc_html_e( 'Weekly digest', 'csa-wp-user-tracker' ); ?></option>
+							</select>
+							<p class="description">
+								<?php
+								if ( $next_digest ) {
+									printf(
+										/* translators: %s: scheduled datetime */
+										esc_html__( 'Next digest run: %s.', 'csa-wp-user-tracker' ),
+										esc_html( get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $next_digest ), 'Y-m-d H:i:s' ) )
+									);
+								} else {
+									esc_html_e( 'No digest is scheduled unless daily or weekly timing is enabled.', 'csa-wp-user-tracker' );
+								}
+								?>
+							</p>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<?php submit_button( __( 'Save Email Updates', 'csa-wp-user-tracker' ) ); ?>
+		</form>
+		<form method="post" style="margin: -8px 0 20px;">
+			<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+			<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
+			<?php submit_button( sprintf( __( 'Send Pending Digest Now (%d)', 'csa-wp-user-tracker' ), absint( $queue_count ) ), 'secondary', 'submit', false ); ?>
+		</form>
+		<hr>
+		<?php
+	}
+
+	/**
+	 * Save email settings or send a pending digest from the admin UI.
+	 */
+	public static function maybe_save_email_settings() {
+		if ( empty( $_POST['csa_wp_user_tracker_email_settings_action'] ) ) {
+			return;
+		}
+
+		if ( ! current_user_can( self::admin_capability() ) ) {
+			wp_die( esc_html__( 'You do not have permission to manage email updates.', 'csa-wp-user-tracker' ) );
+		}
+
+		check_admin_referer( self::EMAIL_SETTINGS_NONCE_ACTION );
+
+		$action = sanitize_key( wp_unslash( $_POST['csa_wp_user_tracker_email_settings_action'] ) );
+		if ( 'save' === $action ) {
+			$raw_settings = array(
+				'csa_email_enabled'    => isset( $_POST['csa_email_enabled'] ) ? wp_unslash( $_POST['csa_email_enabled'] ) : '',
+				'csa_email_recipients' => isset( $_POST['csa_email_recipients'] ) ? wp_unslash( $_POST['csa_email_recipients'] ) : '',
+				'csa_email_post_types' => isset( $_POST['csa_email_post_types'] ) ? wp_unslash( $_POST['csa_email_post_types'] ) : array(),
+				'csa_email_scope'      => isset( $_POST['csa_email_scope'] ) ? wp_unslash( $_POST['csa_email_scope'] ) : '',
+				'csa_email_actor_user' => isset( $_POST['csa_email_actor_user'] ) ? wp_unslash( $_POST['csa_email_actor_user'] ) : '',
+				'csa_email_roles'      => isset( $_POST['csa_email_roles'] ) ? wp_unslash( $_POST['csa_email_roles'] ) : array(),
+				'csa_email_cadence'    => isset( $_POST['csa_email_cadence'] ) ? wp_unslash( $_POST['csa_email_cadence'] ) : '',
+			);
+
+			$settings = self::sanitize_email_settings( $raw_settings );
+			self::write_option( self::OPTION_EMAIL_SETTINGS, $settings );
+			if ( ! $settings['enabled'] || 'immediate' === $settings['cadence'] ) {
+				self::write_option( self::OPTION_EMAIL_QUEUE, array() );
+			}
+			self::reschedule_email_digest();
+			self::redirect_to_admin_page( array( 'csa_email_notice' => 'saved' ) );
+		}
+
+		if ( 'send_digest_now' === $action ) {
+			$result = self::send_queued_email_digest();
+			if ( ! empty( $result['sent'] ) ) {
+				self::redirect_to_admin_page( array( 'csa_email_notice' => 'digest_sent' ) );
+			}
+
+			self::redirect_to_admin_page( array( 'csa_email_notice' => empty( $result['failed'] ) ? 'digest_empty' : 'digest_failed' ) );
+		}
+	}
+
+	/**
+	 * Redirect back to the tracker admin page.
+	 *
+	 * @param array $args Query args.
+	 */
+	private static function redirect_to_admin_page( $args = array() ) {
+		$url = add_query_arg( $args, admin_url( 'tools.php?page=' . self::ADMIN_PAGE_SLUG ) );
+		wp_safe_redirect( $url );
+		exit;
 	}
 
 	/**
@@ -993,8 +1202,18 @@ final class CSA_WP_User_Tracker {
 		$formats = array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' );
 
 		self::$writing = true;
-		$wpdb->insert( self::table_name(), $data, $formats );
-		self::$writing = false;
+		try {
+			$inserted = $wpdb->insert( self::table_name(), $data, $formats );
+		} finally {
+			self::$writing = false;
+		}
+
+		if ( false === $inserted ) {
+			return;
+		}
+
+		$data['id'] = (int) $wpdb->insert_id;
+		self::maybe_send_or_queue_email_update( $data );
 	}
 
 	/**
@@ -1031,6 +1250,505 @@ final class CSA_WP_User_Tracker {
 	}
 
 	/**
+	 * Default email notification settings.
+	 *
+	 * @return array
+	 */
+	private static function default_email_settings() {
+		$admin_email = sanitize_email( (string) get_option( 'admin_email' ) );
+
+		return array(
+			'enabled'    => false,
+			'recipients' => is_email( $admin_email ) ? array( $admin_email ) : array(),
+			'post_types' => array( 'post', 'page' ),
+			'scope'      => 'any',
+			'actor_user' => '',
+			'roles'      => array(),
+			'cadence'    => 'immediate',
+		);
+	}
+
+	/**
+	 * Get normalized email notification settings.
+	 *
+	 * @return array
+	 */
+	private static function email_settings() {
+		$settings = get_option( self::OPTION_EMAIL_SETTINGS, array() );
+		if ( ! is_array( $settings ) ) {
+			$settings = array();
+		}
+
+		return self::sanitize_email_settings( wp_parse_args( $settings, self::default_email_settings() ) );
+	}
+
+	/**
+	 * Sanitize email notification settings.
+	 *
+	 * @param array $raw Raw settings.
+	 * @return array
+	 */
+	private static function sanitize_email_settings( $raw ) {
+		$raw = is_array( $raw ) ? $raw : array();
+
+		$recipients = array();
+		if ( isset( $raw['csa_email_recipients'] ) ) {
+			$recipient_source = $raw['csa_email_recipients'];
+		} elseif ( isset( $raw['recipients'] ) ) {
+			$recipient_source = $raw['recipients'];
+		} else {
+			$recipient_source = array();
+		}
+
+		if ( is_array( $recipient_source ) ) {
+			$recipient_source = implode( ',', $recipient_source );
+		}
+
+		foreach ( preg_split( '/[\s,;]+/', (string) $recipient_source ) as $email ) {
+			$email = sanitize_email( $email );
+			if ( is_email( $email ) ) {
+				$recipients[] = $email;
+			}
+		}
+		$recipients = array_values( array_unique( $recipients ) );
+
+		$post_types_source = isset( $raw['csa_email_post_types'] ) ? $raw['csa_email_post_types'] : ( isset( $raw['post_types'] ) ? $raw['post_types'] : array() );
+		$post_types        = array();
+		foreach ( (array) $post_types_source as $post_type ) {
+			$post_type = sanitize_key( $post_type );
+			if ( in_array( $post_type, array( 'post', 'page' ), true ) ) {
+				$post_types[] = $post_type;
+			}
+		}
+		$post_types = array_values( array_unique( $post_types ) );
+		if ( empty( $post_types ) ) {
+			$post_types = array( 'post', 'page' );
+		}
+
+		$scope = isset( $raw['csa_email_scope'] ) ? sanitize_key( $raw['csa_email_scope'] ) : ( isset( $raw['scope'] ) ? sanitize_key( $raw['scope'] ) : 'any' );
+		if ( ! in_array( $scope, array( 'any', 'user', 'roles' ), true ) ) {
+			$scope = 'any';
+		}
+
+		$actor_user = isset( $raw['csa_email_actor_user'] ) ? sanitize_text_field( $raw['csa_email_actor_user'] ) : ( isset( $raw['actor_user'] ) ? sanitize_text_field( $raw['actor_user'] ) : '' );
+		$actor_user = self::resolve_actor_user_match( $actor_user );
+
+		$roles_source = isset( $raw['csa_email_roles'] ) ? $raw['csa_email_roles'] : ( isset( $raw['roles'] ) ? $raw['roles'] : array() );
+		$roles        = array();
+		foreach ( (array) $roles_source as $role ) {
+			$role = sanitize_key( $role );
+			if ( '' !== $role ) {
+				$roles[] = $role;
+			}
+		}
+		$roles = array_values( array_unique( $roles ) );
+
+		$cadence = isset( $raw['csa_email_cadence'] ) ? sanitize_key( $raw['csa_email_cadence'] ) : ( isset( $raw['cadence'] ) ? sanitize_key( $raw['cadence'] ) : 'immediate' );
+		if ( ! in_array( $cadence, array( 'immediate', 'daily', 'weekly' ), true ) ) {
+			$cadence = 'immediate';
+		}
+
+		return array(
+			'enabled'    => ! empty( $raw['csa_email_enabled'] ) || ! empty( $raw['enabled'] ),
+			'recipients' => $recipients,
+			'post_types' => $post_types,
+			'scope'      => $scope,
+			'actor_user' => $actor_user,
+			'roles'      => $roles,
+			'cadence'    => $cadence,
+		);
+	}
+
+	/**
+	 * Resolve a user filter to a stable user ID when possible.
+	 *
+	 * @param string $actor_user User ID, login, or email.
+	 * @return string
+	 */
+	private static function resolve_actor_user_match( $actor_user ) {
+		$actor_user = trim( sanitize_text_field( (string) $actor_user ) );
+		if ( '' === $actor_user || ctype_digit( $actor_user ) ) {
+			return $actor_user;
+		}
+
+		$user = get_user_by( 'login', $actor_user );
+		if ( ! $user && is_email( $actor_user ) ) {
+			$user = get_user_by( 'email', $actor_user );
+		}
+
+		return $user instanceof WP_User ? (string) $user->ID : $actor_user;
+	}
+
+	/**
+	 * Add the weekly recurrence used by email digests.
+	 *
+	 * @param array $schedules Cron schedules.
+	 * @return array
+	 */
+	public static function add_cron_schedules( $schedules ) {
+		if ( empty( $schedules[ self::EMAIL_WEEKLY_RECURRENCE ] ) ) {
+			$schedules[ self::EMAIL_WEEKLY_RECURRENCE ] = array(
+				'interval' => WEEK_IN_SECONDS,
+				'display'  => __( 'Once Weekly', 'csa-wp-user-tracker' ),
+			);
+		}
+
+		return $schedules;
+	}
+
+	/**
+	 * Ensure the email digest schedule matches current settings.
+	 */
+	public static function ensure_email_digest_schedule() {
+		$settings     = self::email_settings();
+		$needs_digest = $settings['enabled'] && in_array( $settings['cadence'], array( 'daily', 'weekly' ), true );
+
+		if ( ! $needs_digest ) {
+			if ( wp_next_scheduled( self::EMAIL_DIGEST_HOOK ) ) {
+				wp_clear_scheduled_hook( self::EMAIL_DIGEST_HOOK );
+			}
+			return;
+		}
+
+		if ( ! wp_next_scheduled( self::EMAIL_DIGEST_HOOK ) ) {
+			self::schedule_email_digest( $settings['cadence'] );
+		}
+	}
+
+	/**
+	 * Clear and recreate the email digest schedule.
+	 */
+	private static function reschedule_email_digest() {
+		wp_clear_scheduled_hook( self::EMAIL_DIGEST_HOOK );
+		self::ensure_email_digest_schedule();
+	}
+
+	/**
+	 * Schedule the email digest cron event.
+	 *
+	 * @param string $cadence Daily or weekly.
+	 */
+	private static function schedule_email_digest( $cadence ) {
+		add_filter( 'cron_schedules', array( __CLASS__, 'add_cron_schedules' ) );
+
+		$recurrence = 'weekly' === $cadence ? self::EMAIL_WEEKLY_RECURRENCE : 'daily';
+		$delay      = 'weekly' === $cadence ? WEEK_IN_SECONDS : DAY_IN_SECONDS;
+		wp_schedule_event( time() + $delay, $recurrence, self::EMAIL_DIGEST_HOOK );
+	}
+
+	/**
+	 * Send an email digest from WP-Cron.
+	 */
+	public static function send_scheduled_email_digest() {
+		self::send_queued_email_digest();
+	}
+
+	/**
+	 * Maybe notify for a matching content update.
+	 *
+	 * @param array $row Log row data.
+	 */
+	private static function maybe_send_or_queue_email_update( $row ) {
+		$settings = self::email_settings();
+		if ( ! $settings['enabled'] || empty( $settings['recipients'] ) || ! self::log_row_matches_email_settings( $row, $settings ) ) {
+			return;
+		}
+
+		if ( 'immediate' === $settings['cadence'] ) {
+			self::send_email_update( array( $row ), $settings, false );
+			return;
+		}
+
+		if ( ! empty( $row['id'] ) ) {
+			self::append_email_queue( (int) $row['id'] );
+		}
+	}
+
+	/**
+	 * Check if a log row matches the email settings.
+	 *
+	 * @param array|object $row Log row.
+	 * @param array        $settings Email settings.
+	 * @return bool
+	 */
+	private static function log_row_matches_email_settings( $row, $settings ) {
+		$row = self::normalize_log_row( $row );
+
+		if ( 'post_updated' !== $row['action'] || ! in_array( $row['object_type'], $settings['post_types'], true ) ) {
+			return false;
+		}
+
+		if ( 'any' === $settings['scope'] ) {
+			return true;
+		}
+
+		if ( 'user' === $settings['scope'] ) {
+			$actor_user = strtolower( trim( (string) $settings['actor_user'] ) );
+			if ( '' === $actor_user ) {
+				return false;
+			}
+
+			if ( ctype_digit( $actor_user ) ) {
+				return (int) $actor_user === (int) $row['user_id'];
+			}
+
+			return $actor_user === strtolower( $row['user_login'] ) || $actor_user === strtolower( $row['display_name'] );
+		}
+
+		if ( 'roles' === $settings['scope'] ) {
+			$row_roles = array_filter( array_map( 'trim', explode( ',', $row['roles'] ) ) );
+			return ! empty( array_intersect( $row_roles, $settings['roles'] ) );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get queued log IDs for digest emails.
+	 *
+	 * @return array
+	 */
+	private static function email_queue() {
+		$queue = get_option( self::OPTION_EMAIL_QUEUE, array() );
+		if ( ! is_array( $queue ) ) {
+			return array();
+		}
+
+		return array_values( array_filter( array_map( 'absint', $queue ) ) );
+	}
+
+	/**
+	 * Add a log ID to the digest queue.
+	 *
+	 * @param int $log_id Log ID.
+	 */
+	private static function append_email_queue( $log_id ) {
+		$log_id = absint( $log_id );
+		if ( ! $log_id ) {
+			return;
+		}
+
+		$queue   = self::email_queue();
+		$queue[] = $log_id;
+		$queue   = array_values( array_unique( array_filter( array_map( 'absint', $queue ) ) ) );
+		$queue   = array_slice( $queue, -1 * self::EMAIL_QUEUE_LIMIT );
+
+		self::write_option( self::OPTION_EMAIL_QUEUE, $queue );
+		self::ensure_email_digest_schedule();
+	}
+
+	/**
+	 * Send pending digest email rows.
+	 *
+	 * @return array
+	 */
+	private static function send_queued_email_digest() {
+		$settings = self::email_settings();
+		$queue    = self::email_queue();
+
+		if ( empty( $queue ) || ! $settings['enabled'] || empty( $settings['recipients'] ) || 'immediate' === $settings['cadence'] ) {
+			return array(
+				'sent'   => 0,
+				'failed' => false,
+			);
+		}
+
+		$rows = self::get_log_rows_by_ids( $queue );
+		if ( empty( $rows ) ) {
+			self::write_option( self::OPTION_EMAIL_QUEUE, array() );
+			return array(
+				'sent'   => 0,
+				'failed' => false,
+			);
+		}
+
+		$matched = array();
+		foreach ( $rows as $row ) {
+			if ( self::log_row_matches_email_settings( $row, $settings ) ) {
+				$matched[] = self::normalize_log_row( $row );
+			}
+		}
+
+		if ( empty( $matched ) ) {
+			self::remove_email_queue_ids( $queue );
+			return array(
+				'sent'   => 0,
+				'failed' => false,
+			);
+		}
+
+		if ( ! self::send_email_update( $matched, $settings, true ) ) {
+			return array(
+				'sent'   => 0,
+				'failed' => true,
+			);
+		}
+
+		self::remove_email_queue_ids( $queue );
+		self::write_option( self::OPTION_EMAIL_LAST_SENT, current_time( 'mysql', true ) );
+
+		return array(
+			'sent'   => count( $matched ),
+			'failed' => false,
+		);
+	}
+
+	/**
+	 * Remove sent or stale IDs from the digest queue.
+	 *
+	 * @param array $ids Log IDs.
+	 */
+	private static function remove_email_queue_ids( $ids ) {
+		$remove = array_map( 'absint', (array) $ids );
+		$queue  = array_values( array_diff( self::email_queue(), $remove ) );
+		self::write_option( self::OPTION_EMAIL_QUEUE, $queue );
+	}
+
+	/**
+	 * Load log rows by ID.
+	 *
+	 * @param array $ids Log IDs.
+	 * @return array
+	 */
+	private static function get_log_rows_by_ids( $ids ) {
+		global $wpdb;
+
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $ids ) ) ) );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+
+		$id_sql = implode( ',', $ids );
+		return $wpdb->get_results( 'SELECT * FROM ' . self::table_name() . " WHERE id IN ({$id_sql}) ORDER BY occurred_at ASC, id ASC", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Send an immediate or digest email update.
+	 *
+	 * @param array $rows Log rows.
+	 * @param array $settings Email settings.
+	 * @param bool  $digest Whether this is a digest.
+	 * @return bool
+	 */
+	private static function send_email_update( $rows, $settings, $digest ) {
+		$rows = array_map( array( __CLASS__, 'normalize_log_row' ), $rows );
+		$rows = array_filter( $rows );
+		if ( empty( $rows ) ) {
+			return false;
+		}
+
+		$site_name = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+		$count     = count( $rows );
+		$subject   = $digest
+			? sprintf(
+				/* translators: 1: site name, 2: count */
+				__( '[%1$s] CSA user tracker digest (%2$d updates)', 'csa-wp-user-tracker' ),
+				$site_name,
+				$count
+			)
+			: sprintf(
+				/* translators: 1: site name, 2: object type, 3: object name */
+				__( '[%1$s] %2$s updated: %3$s', 'csa-wp-user-tracker' ),
+				$site_name,
+				ucfirst( $rows[0]['object_type'] ),
+				$rows[0]['object_name']
+			);
+
+		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+
+		return (bool) wp_mail( $settings['recipients'], $subject, self::build_email_body( $rows, $digest ), $headers );
+	}
+
+	/**
+	 * Build a plain-text email body.
+	 *
+	 * @param array $rows Log rows.
+	 * @param bool  $digest Whether this is a digest.
+	 * @return string
+	 */
+	private static function build_email_body( $rows, $digest ) {
+		$lines   = array();
+		$lines[] = sprintf(
+			/* translators: %d: update count */
+			_n( '%d content update matched your CSA WP User Tracker rule.', '%d content updates matched your CSA WP User Tracker rule.', count( $rows ), 'csa-wp-user-tracker' ),
+			count( $rows )
+		);
+		$lines[] = sprintf( __( 'Site: %s', 'csa-wp-user-tracker' ), home_url( '/' ) );
+		$lines[] = sprintf( __( 'Delivery: %s', 'csa-wp-user-tracker' ), $digest ? __( 'digest', 'csa-wp-user-tracker' ) : __( 'once triggered', 'csa-wp-user-tracker' ) );
+		$lines[] = '';
+
+		foreach ( $rows as $row ) {
+			$lines[] = sprintf(
+				'%s #%d: %s',
+				ucfirst( $row['object_type'] ),
+				absint( $row['object_id'] ),
+				wp_specialchars_decode( $row['object_name'], ENT_QUOTES )
+			);
+			$lines[] = sprintf( __( 'Time: %s', 'csa-wp-user-tracker' ), mysql2date( 'Y-m-d H:i:s', $row['occurred_at'], true ) );
+			$lines[] = sprintf( __( 'Updated by: %1$s (%2$s #%3$d)', 'csa-wp-user-tracker' ), $row['display_name'] ? $row['display_name'] : $row['user_login'], $row['user_login'], absint( $row['user_id'] ) );
+			$lines[] = sprintf( __( 'Roles: %s', 'csa-wp-user-tracker' ), $row['roles'] );
+
+			$edit_url = self::edit_object_url( $row );
+			if ( $edit_url ) {
+				$lines[] = sprintf( __( 'Edit: %s', 'csa-wp-user-tracker' ), $edit_url );
+			}
+
+			if ( $row['request_uri'] ) {
+				$lines[] = sprintf( __( 'Request: %s', 'csa-wp-user-tracker' ), home_url( $row['request_uri'] ) );
+			}
+
+			$lines[] = '';
+		}
+
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Get an edit URL for the tracked object.
+	 *
+	 * @param array $row Log row.
+	 * @return string
+	 */
+	private static function edit_object_url( $row ) {
+		if ( ! in_array( $row['object_type'], array( 'post', 'page' ), true ) || empty( $row['object_id'] ) ) {
+			return '';
+		}
+
+		$url = get_edit_post_link( absint( $row['object_id'] ), '' );
+		return $url ? esc_url_raw( $url ) : '';
+	}
+
+	/**
+	 * Normalize row arrays and objects.
+	 *
+	 * @param array|object $row Log row.
+	 * @return array
+	 */
+	private static function normalize_log_row( $row ) {
+		$row = is_object( $row ) ? get_object_vars( $row ) : (array) $row;
+
+		return wp_parse_args(
+			$row,
+			array(
+				'id'             => 0,
+				'occurred_at'    => '',
+				'user_id'        => 0,
+				'user_login'     => '',
+				'display_name'   => '',
+				'roles'          => '',
+				'action'         => '',
+				'object_type'    => '',
+				'object_id'      => 0,
+				'object_name'    => '',
+				'request_method' => '',
+				'request_uri'    => '',
+				'ip_hash'        => '',
+				'context'        => '',
+			)
+		);
+	}
+
+	/**
 	 * Log an option name, not its value.
 	 *
 	 * @param string $action Action.
@@ -1054,6 +1772,9 @@ final class CSA_WP_User_Tracker {
 		$ignored_exact = array(
 			self::OPTION_VERSION,
 			self::LEGACY_OPTION_VERSION,
+			self::OPTION_EMAIL_SETTINGS,
+			self::OPTION_EMAIL_QUEUE,
+			self::OPTION_EMAIL_LAST_SENT,
 			'cron',
 			'rewrite_rules',
 			'recently_edited',
