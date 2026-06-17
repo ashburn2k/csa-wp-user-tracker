@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.7
+ * Version: 0.1.8
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.7' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.8' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';

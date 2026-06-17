@@ -13,17 +13,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Adds WordPress update data from GitHub releases.
  */
 final class CSA_WP_User_Tracker_GitHub_Updater {
-	const PLUGIN_SLUG = 'csa-wp-user-tracker';
-	const ASSET_NAME  = 'csa-wp-user-tracker.zip';
-	const REPO_URL    = 'https://github.com/ashburn2k/csa-wp-user-tracker';
-	const REPO_API    = 'https://api.github.com/repos/ashburn2k/csa-wp-user-tracker';
-	const CACHE_KEY   = 'csa_wp_user_tracker_github_release';
+	const PLUGIN_SLUG         = 'csa-wp-user-tracker';
+	const ASSET_NAME          = 'csa-wp-user-tracker.zip';
+	const REPO_URL            = 'https://github.com/ashburn2k/csa-wp-user-tracker';
+	const REPO_API            = 'https://api.github.com/repos/ashburn2k/csa-wp-user-tracker';
+	const CACHE_KEY           = 'csa_wp_user_tracker_github_release';
+	const CACHE_UPDATE_TTL    = 21600;
+	const CACHE_NO_UPDATE_TTL = 900;
+	const CACHE_FAILURE_TTL   = 300;
 
 	/**
 	 * Register update hooks.
 	 */
 	public static function init() {
 		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'add_update_data' ) );
+		add_filter( 'site_transient_update_plugins', array( __CLASS__, 'add_update_data' ) );
 		add_filter( 'plugins_api', array( __CLASS__, 'add_plugin_info' ), 10, 3 );
 		add_filter( 'upgrader_pre_download', array( __CLASS__, 'download_private_package' ), 10, 4 );
 	}
@@ -39,6 +43,14 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 			$transient = (object) array();
 		}
 
+		if ( empty( $transient->response ) || ! is_array( $transient->response ) ) {
+			$transient->response = array();
+		}
+
+		if ( empty( $transient->no_update ) || ! is_array( $transient->no_update ) ) {
+			$transient->no_update = array();
+		}
+
 		$release = self::latest_release();
 		if ( ! $release ) {
 			return $transient;
@@ -47,6 +59,7 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 		$plugin_file = self::plugin_file();
 		if ( version_compare( $release['version'], CSA_WP_USER_TRACKER_VERSION, '>' ) ) {
 			$transient->response[ $plugin_file ] = self::update_object( $release );
+			unset( $transient->no_update[ $plugin_file ] );
 		} else {
 			$transient->no_update[ $plugin_file ] = self::update_object( $release );
 			unset( $transient->response[ $plugin_file ] );
@@ -149,9 +162,23 @@ final class CSA_WP_User_Tracker_GitHub_Updater {
 		}
 
 		$release = self::fetch_latest_release();
-		set_site_transient( self::CACHE_KEY, $release ? $release : array(), $release ? 3 * HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
+		set_site_transient( self::CACHE_KEY, $release ? $release : array(), self::release_cache_ttl( $release ) );
 
 		return $release;
+	}
+
+	/**
+	 * Cache update-available responses longer than no-update responses.
+	 *
+	 * @param array|null $release Release data.
+	 * @return int Cache duration in seconds.
+	 */
+	private static function release_cache_ttl( $release ) {
+		if ( ! $release || empty( $release['version'] ) ) {
+			return self::CACHE_FAILURE_TTL;
+		}
+
+		return version_compare( $release['version'], CSA_WP_USER_TRACKER_VERSION, '>' ) ? self::CACHE_UPDATE_TTL : self::CACHE_NO_UPDATE_TTL;
 	}
 
 	/**
