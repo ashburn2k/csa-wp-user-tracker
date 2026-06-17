@@ -35,6 +35,8 @@ Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pan
 
 After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_options` by default. Use the `csa_wp_user_tracker_admin_capability` filter to change the capability.
 
+The admin screen uses a scoped modern panel layout with a compact status header, summary stats, cleaner pagination, and two-column email update settings to reduce scrolling.
+
 The activity list shows plain-English action, object, and request labels for non-technical users, while keeping the raw stored action and object type visible in small text for filtering and troubleshooting. WordPress trash events display as deleted and moved to Trash; permanent delete events display as deleted permanently.
 
 Use the **Focus page/post edits and deletes** toggle to show only post/page edit, status-change, trash, and permanent-delete rows. Matching rows are also highlighted in the full activity list with edit/delete badges.

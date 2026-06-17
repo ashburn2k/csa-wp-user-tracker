@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.15
+ * Version: 0.1.16
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.15' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.16' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -271,139 +271,262 @@ final class CSA_WP_User_Tracker {
 		$total      = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table_name} {$where['sql']}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$rows       = $wpdb->get_results( "SELECT * FROM {$table_name} {$where['sql']} ORDER BY occurred_at DESC, id DESC LIMIT " . absint( $per_page ) . ' OFFSET ' . absint( $offset ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$total_pages = max( 1, (int) ceil( $total / $per_page ) );
+		$range_start = $total ? $offset + 1 : 0;
+		$range_end   = $total ? min( $offset + $per_page, $total ) : 0;
 		$base_url    = remove_query_arg( array( 'paged', self::EXPORT_QUERY_ARG, '_wpnonce' ) );
 		$export_url  = wp_nonce_url(
 			add_query_arg( self::EXPORT_QUERY_ARG, '1', $base_url ),
 			self::EXPORT_NONCE_ACTION
 		);
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'CSA WP User Tracker', 'csa-wp-user-tracker' ); ?></h1>
-			<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'csa-wp-user-tracker' ); ?></p>
-			<p class="description">
-				<?php esc_html_e( 'Loaded plugin version:', 'csa-wp-user-tracker' ); ?>
-				<code><?php echo esc_html( CSA_WP_USER_TRACKER_VERSION ); ?></code>
-			</p>
+		<div class="wrap csa-wp-user-tracker-admin">
 			<style>
-				.csa-wp-user-tracker-filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0 20px; }
-				.csa-wp-user-tracker-filter-bar label { display: inline-flex; flex-direction: column; gap: 4px; }
-				.csa-wp-user-tracker-focus-toggle { align-items: center !important; align-self: center; background: #fff8e5; border: 1px solid #dba617; border-radius: 4px; color: #1d2327; flex-direction: row !important; gap: 6px !important; padding: 6px 8px; }
-				.csa-wp-user-tracker-focus-note { border-left: 4px solid #dba617; padding-left: 10px; }
-				.widefat.striped tbody tr.csa-wp-user-tracker-focus-edit td { background: #fff8e5; }
-				.widefat.striped tbody tr.csa-wp-user-tracker-focus-delete td { background: #fcf0f1; }
+				.csa-wp-user-tracker-admin { color: #1f2933; max-width: 1240px; }
+				.csa-wp-user-tracker-admin * { box-sizing: border-box; }
+				.csa-wp-user-tracker-admin h1,
+				.csa-wp-user-tracker-admin h2,
+				.csa-wp-user-tracker-admin p { margin-top: 0; }
+				.csa-wp-user-tracker-admin input[type="text"],
+				.csa-wp-user-tracker-admin input[type="date"],
+				.csa-wp-user-tracker-admin select { border-color: #cbd5e1; border-radius: 6px; min-height: 36px; }
+				.csa-wp-user-tracker-admin input[type="text"]:focus,
+				.csa-wp-user-tracker-admin input[type="date"]:focus,
+				.csa-wp-user-tracker-admin select:focus { border-color: #0f6b78; box-shadow: 0 0 0 1px #0f6b78; }
+				.csa-wp-user-tracker-hero { align-items: flex-start; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; color: #f8fafc; display: flex; gap: 20px; justify-content: space-between; margin: 20px 0 16px; padding: 22px 24px; }
+				.csa-wp-user-tracker-hero h1 { color: #fff; font-size: 26px; line-height: 1.2; margin: 0 0 8px; }
+				.csa-wp-user-tracker-hero p { color: #cbd5e1; font-size: 14px; margin: 0; max-width: 660px; }
+				.csa-wp-user-tracker-eyebrow { color: #0f6b78; font-size: 11px; font-weight: 700; letter-spacing: 0; margin: 0 0 6px; text-transform: uppercase; }
+				.csa-wp-user-tracker-hero .csa-wp-user-tracker-eyebrow { color: #93e3ec; }
+				.csa-wp-user-tracker-version-pill,
+				.csa-wp-user-tracker-status-pill { align-items: center; border-radius: 999px; display: inline-flex; font-size: 12px; font-weight: 700; gap: 6px; line-height: 1; white-space: nowrap; }
+				.csa-wp-user-tracker-version-pill { background: #f8fafc; color: #0f172a; padding: 8px 10px; }
+				.csa-wp-user-tracker-version-pill code { background: transparent; color: inherit; font-size: 12px; padding: 0; }
+				.csa-wp-user-tracker-status-pill { background: #e2e8f0; color: #334155; padding: 7px 9px; }
+				.csa-wp-user-tracker-status-pill.is-on { background: #d1fae5; color: #065f46; }
+				.csa-wp-user-tracker-status-pill.is-off { background: #e2e8f0; color: #475569; }
+				.csa-wp-user-tracker-stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 16px; }
+				.csa-wp-user-tracker-stat { background: #fff; border: 1px solid #dbe3ec; border-radius: 8px; padding: 14px 16px; }
+				.csa-wp-user-tracker-stat span { color: #64748b; display: block; font-size: 12px; font-weight: 700; margin-bottom: 5px; text-transform: uppercase; }
+				.csa-wp-user-tracker-stat strong { color: #0f172a; display: block; font-size: 22px; line-height: 1.2; }
+				.csa-wp-user-tracker-panel { background: #fff; border: 1px solid #dbe3ec; border-radius: 8px; margin: 0 0 16px; padding: 18px; }
+				.csa-wp-user-tracker-panel-heading { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; margin-bottom: 14px; }
+				.csa-wp-user-tracker-panel-heading h2 { color: #0f172a; font-size: 18px; line-height: 1.3; margin: 0; }
+				.csa-wp-user-tracker-panel-subtitle { color: #64748b; margin: 5px 0 0; max-width: 680px; }
+				.csa-wp-user-tracker-filter-bar { align-items: flex-end; display: grid; gap: 12px; grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr) 150px 150px auto; margin: 0; }
+				.csa-wp-user-tracker-filter-bar label { color: #475569; display: flex; flex-direction: column; font-size: 12px; font-weight: 700; gap: 5px; }
+				.csa-wp-user-tracker-filter-bar input[type="text"],
+				.csa-wp-user-tracker-filter-bar input[type="date"] { width: 100%; }
+				.csa-wp-user-tracker-filter-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+				.csa-wp-user-tracker-focus-toggle { align-items: center !important; background: #fff7ed; border: 1px solid #fdba74; border-radius: 6px; color: #1d2327; flex-direction: row !important; font-size: 13px !important; gap: 7px !important; grid-column: 1 / -1; padding: 9px 10px; }
+				.csa-wp-user-tracker-focus-note { background: #fffbeb; border-left: 4px solid #d97706; margin: 12px 0 0; padding: 9px 12px; }
+				.csa-wp-user-tracker-email-form { margin: 0; }
+				.csa-wp-user-tracker-settings-grid { display: grid; gap: 0 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+				.csa-wp-user-tracker-setting { border-top: 1px solid #e2e8f0; padding: 14px 0; }
+				.csa-wp-user-tracker-setting-title { color: #0f172a; display: block; font-weight: 700; margin: 0 0 7px; }
+				.csa-wp-user-tracker-setting input.regular-text,
+				.csa-wp-user-tracker-setting input[type="text"],
+				.csa-wp-user-tracker-setting select { max-width: none; width: 100%; }
+				.csa-wp-user-tracker-setting .description { display: block; margin-top: 6px; }
+				.csa-wp-user-tracker-choice-row { align-items: center; color: #334155; display: inline-flex; gap: 7px; margin: 0 16px 8px 0; }
+				.csa-wp-user-tracker-role-grid { display: grid; gap: 8px 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+				.csa-wp-user-tracker-form-actions,
+				.csa-wp-user-tracker-email-actions { align-items: center; border-top: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 8px; padding-top: 14px; }
+				.csa-wp-user-tracker-email-actions { margin-top: 14px; }
+				.csa-wp-user-tracker-form-actions .submit { margin: 0; padding: 0; }
+				.csa-wp-user-tracker-email-actions .submit { margin: 0; padding: 0; }
+				.csa-wp-user-tracker-form-note { margin: 10px 0 0; }
+				.csa-wp-user-tracker-table-wrap { border: 1px solid #dbe3ec; border-radius: 8px; overflow: auto; }
+				.csa-wp-user-tracker-table { border: 0; border-collapse: separate; border-spacing: 0; margin: 0; }
+				.csa-wp-user-tracker-table thead th { background: #f8fafc; border-bottom: 1px solid #dbe3ec; color: #334155; font-size: 12px; font-weight: 700; padding: 11px 12px; text-transform: uppercase; }
+				.csa-wp-user-tracker-table tbody td { border-bottom: 1px solid #edf2f7; padding: 12px; vertical-align: top; }
+				.csa-wp-user-tracker-table tbody tr:last-child td { border-bottom: 0; }
+				.csa-wp-user-tracker-table code { background: #eef2f7; border-radius: 4px; color: #334155; padding: 2px 5px; }
+				.csa-wp-user-tracker-table small { color: #64748b; }
+				.csa-wp-user-tracker-context-preview { background: #f8fafc; border: 1px solid #dbe3ec; border-radius: 6px; max-width: 360px; padding: 10px; white-space: pre-wrap; }
+				.csa-wp-user-tracker-pagination { height: auto; margin: 14px 0 0; }
+				.csa-wp-user-tracker-pagination .tablenav-pages { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; float: none; width: 100%; }
+				.csa-wp-user-tracker-pagination .tablenav-pages span { align-items: center; display: inline-flex; }
+				.csa-wp-user-tracker-pagination .page-numbers { border-radius: 6px; min-width: 30px; text-align: center; }
+				.csa-wp-user-tracker-pagination .page-numbers.current { background: #0f172a; border-color: #0f172a; color: #fff; }
+				.widefat tbody tr.csa-wp-user-tracker-focus-edit td { background: #fff8e5; }
+				.widefat tbody tr.csa-wp-user-tracker-focus-delete td { background: #fcf0f1; }
 				.csa-wp-user-tracker-focus-edit td:first-child { border-left: 4px solid #dba617; }
 				.csa-wp-user-tracker-focus-delete td:first-child { border-left: 4px solid #d63638; }
 				.csa-wp-user-tracker-badge { border-radius: 999px; display: inline-block; font-size: 11px; font-weight: 600; line-height: 1; margin-bottom: 4px; padding: 4px 7px; text-transform: uppercase; }
 				.csa-wp-user-tracker-badge-edit { background: #f0b849; color: #1d2327; }
 				.csa-wp-user-tracker-badge-delete { background: #d63638; color: #fff; }
+				@media (max-width: 1100px) {
+					.csa-wp-user-tracker-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+					.csa-wp-user-tracker-filter-actions { grid-column: 1 / -1; }
+				}
+				@media (max-width: 782px) {
+					.csa-wp-user-tracker-hero,
+					.csa-wp-user-tracker-panel-heading { display: block; }
+					.csa-wp-user-tracker-version-pill,
+					.csa-wp-user-tracker-status-pill { margin-top: 12px; }
+					.csa-wp-user-tracker-stat-grid,
+					.csa-wp-user-tracker-settings-grid,
+					.csa-wp-user-tracker-filter-bar { grid-template-columns: 1fr; }
+					.csa-wp-user-tracker-role-grid { grid-template-columns: 1fr; }
+				}
 			</style>
+			<header class="csa-wp-user-tracker-hero">
+				<div>
+					<p class="csa-wp-user-tracker-eyebrow"><?php esc_html_e( 'Activity Monitor', 'csa-wp-user-tracker' ); ?></p>
+					<h1><?php esc_html_e( 'CSA WP User Tracker', 'csa-wp-user-tracker' ); ?></h1>
+					<p><?php esc_html_e( 'Tracks logged-in activity for users whose roles are not limited to subscriber.', 'csa-wp-user-tracker' ); ?></p>
+				</div>
+				<div class="csa-wp-user-tracker-version-pill">
+					<?php esc_html_e( 'Loaded version', 'csa-wp-user-tracker' ); ?>
+					<code><?php echo esc_html( CSA_WP_USER_TRACKER_VERSION ); ?></code>
+				</div>
+			</header>
+			<div class="csa-wp-user-tracker-stat-grid">
+				<div class="csa-wp-user-tracker-stat">
+					<span><?php esc_html_e( 'Showing', 'csa-wp-user-tracker' ); ?></span>
+					<strong><?php echo esc_html( sprintf( '%1$d-%2$d', absint( $range_start ), absint( $range_end ) ) ); ?></strong>
+				</div>
+				<div class="csa-wp-user-tracker-stat">
+					<span><?php esc_html_e( 'Total matching', 'csa-wp-user-tracker' ); ?></span>
+					<strong><?php echo absint( $total ); ?></strong>
+				</div>
+				<div class="csa-wp-user-tracker-stat">
+					<span><?php esc_html_e( 'Page', 'csa-wp-user-tracker' ); ?></span>
+					<strong><?php echo esc_html( sprintf( '%1$d / %2$d', absint( $page ), absint( $total_pages ) ) ); ?></strong>
+				</div>
+				<div class="csa-wp-user-tracker-stat">
+					<span><?php esc_html_e( 'Mode', 'csa-wp-user-tracker' ); ?></span>
+					<strong><?php echo esc_html( $filters['focus_content_edits'] ? __( 'Focused', 'csa-wp-user-tracker' ) : __( 'All activity', 'csa-wp-user-tracker' ) ); ?></strong>
+				</div>
+			</div>
 			<?php self::render_email_settings_notices(); ?>
-			<?php self::render_email_settings_form(); ?>
-			<form method="get" class="csa-wp-user-tracker-filter-bar">
-				<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
-				<label>
-					<?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?>
-					<input type="text" name="activity_user" value="<?php echo esc_attr( $filters['user'] ); ?>" placeholder="<?php esc_attr_e( 'ID or login', 'csa-wp-user-tracker' ); ?>">
-				</label>
-				<label>
-					<?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?>
-					<input type="text" name="activity_action" value="<?php echo esc_attr( $filters['action'] ); ?>" placeholder="post_updated">
-				</label>
-				<label>
-					<?php esc_html_e( 'Object Type', 'csa-wp-user-tracker' ); ?>
-					<input type="text" name="activity_object_type" value="<?php echo esc_attr( $filters['object_type'] ); ?>" placeholder="post">
-				</label>
-				<label>
-					<?php esc_html_e( 'From', 'csa-wp-user-tracker' ); ?>
-					<input type="date" name="activity_from" value="<?php echo esc_attr( $filters['from'] ); ?>">
-				</label>
-				<label>
-					<?php esc_html_e( 'To', 'csa-wp-user-tracker' ); ?>
-					<input type="date" name="activity_to" value="<?php echo esc_attr( $filters['to'] ); ?>">
-				</label>
-				<label class="csa-wp-user-tracker-focus-toggle">
-					<input type="checkbox" name="activity_focus_content_edits" value="1" <?php checked( $filters['focus_content_edits'] ); ?>>
-					<?php esc_html_e( 'Focus page/post edits and deletes', 'csa-wp-user-tracker' ); ?>
-				</label>
-				<?php submit_button( __( 'Filter', 'csa-wp-user-tracker' ), 'secondary', '', false ); ?>
-				<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'csa-wp-user-tracker' ); ?></a>
-				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'csa-wp-user-tracker' ); ?></a>
-			</form>
-			<?php if ( $filters['focus_content_edits'] ) : ?>
-				<p class="description csa-wp-user-tracker-focus-note"><?php esc_html_e( 'Showing only page/post edit, status-change, trash, and permanent-delete activity.', 'csa-wp-user-tracker' ); ?></p>
-			<?php endif; ?>
-			<p>
-				<?php
-				printf(
-					/* translators: 1: total rows, 2: current page, 3: total pages */
-					esc_html__( '%1$d logged activities. Page %2$d of %3$d.', 'csa-wp-user-tracker' ),
-					absint( $total ),
-					absint( $page ),
-					absint( $total_pages )
-				);
-				?>
-			</p>
-			<table class="widefat striped">
-				<thead>
-					<tr>
-						<th><?php esc_html_e( 'Time', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Object', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Request', 'csa-wp-user-tracker' ); ?></th>
-						<th><?php esc_html_e( 'Context', 'csa-wp-user-tracker' ); ?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ( empty( $rows ) ) : ?>
-						<tr><td colspan="7"><?php esc_html_e( 'No activity found.', 'csa-wp-user-tracker' ); ?></td></tr>
-					<?php else : ?>
-						<?php foreach ( $rows as $row ) : ?>
+			<section class="csa-wp-user-tracker-panel">
+				<?php self::render_email_settings_form(); ?>
+			</section>
+			<section class="csa-wp-user-tracker-panel">
+				<div class="csa-wp-user-tracker-panel-heading">
+					<div>
+						<h2><?php esc_html_e( 'Activity Filters', 'csa-wp-user-tracker' ); ?></h2>
+						<p class="csa-wp-user-tracker-panel-subtitle"><?php esc_html_e( 'Narrow the log by user, stored action, object type, or date range.', 'csa-wp-user-tracker' ); ?></p>
+					</div>
+				</div>
+				<form method="get" class="csa-wp-user-tracker-filter-bar">
+					<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
+					<label>
+						<?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?>
+						<input type="text" name="activity_user" value="<?php echo esc_attr( $filters['user'] ); ?>" placeholder="<?php esc_attr_e( 'ID or login', 'csa-wp-user-tracker' ); ?>">
+					</label>
+					<label>
+						<?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?>
+						<input type="text" name="activity_action" value="<?php echo esc_attr( $filters['action'] ); ?>" placeholder="post_updated">
+					</label>
+					<label>
+						<?php esc_html_e( 'Object Type', 'csa-wp-user-tracker' ); ?>
+						<input type="text" name="activity_object_type" value="<?php echo esc_attr( $filters['object_type'] ); ?>" placeholder="post">
+					</label>
+					<label>
+						<?php esc_html_e( 'From', 'csa-wp-user-tracker' ); ?>
+						<input type="date" name="activity_from" value="<?php echo esc_attr( $filters['from'] ); ?>">
+					</label>
+					<label>
+						<?php esc_html_e( 'To', 'csa-wp-user-tracker' ); ?>
+						<input type="date" name="activity_to" value="<?php echo esc_attr( $filters['to'] ); ?>">
+					</label>
+					<div class="csa-wp-user-tracker-filter-actions">
+						<?php submit_button( __( 'Filter', 'csa-wp-user-tracker' ), 'secondary', '', false ); ?>
+						<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'csa-wp-user-tracker' ); ?></a>
+						<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'csa-wp-user-tracker' ); ?></a>
+					</div>
+					<label class="csa-wp-user-tracker-focus-toggle">
+						<input type="checkbox" name="activity_focus_content_edits" value="1" <?php checked( $filters['focus_content_edits'] ); ?>>
+						<?php esc_html_e( 'Focus page/post edits and deletes', 'csa-wp-user-tracker' ); ?>
+					</label>
+				</form>
+				<?php if ( $filters['focus_content_edits'] ) : ?>
+					<p class="description csa-wp-user-tracker-focus-note"><?php esc_html_e( 'Showing only page/post edit, status-change, trash, and permanent-delete activity.', 'csa-wp-user-tracker' ); ?></p>
+				<?php endif; ?>
+			</section>
+			<section class="csa-wp-user-tracker-panel">
+				<div class="csa-wp-user-tracker-panel-heading">
+					<div>
+						<h2><?php esc_html_e( 'Activity List', 'csa-wp-user-tracker' ); ?></h2>
+						<p class="csa-wp-user-tracker-panel-subtitle">
 							<?php
-							$action_label  = self::admin_action_label( $row );
-							$object_label  = self::admin_object_label( $row );
-							$request_label = self::admin_request_label( $row );
-							$focus_kind    = self::admin_focus_kind( $row );
+							printf(
+								/* translators: 1: first row number, 2: last row number, 3: total rows */
+								esc_html__( 'Showing %1$d-%2$d of %3$d logged activities.', 'csa-wp-user-tracker' ),
+								absint( $range_start ),
+								absint( $range_end ),
+								absint( $total )
+							);
 							?>
-							<tr class="<?php echo $focus_kind ? esc_attr( 'csa-wp-user-tracker-focus-' . $focus_kind ) : ''; ?>">
-								<td><?php echo esc_html( mysql2date( 'Y-m-d H:i:s', $row->occurred_at, true ) ); ?></td>
-								<td>
-									<strong><?php echo esc_html( $row->display_name ? $row->display_name : $row->user_login ); ?></strong><br>
-									<code><?php echo esc_html( $row->user_login ); ?></code> #<?php echo absint( $row->user_id ); ?>
-								</td>
-								<td><?php echo esc_html( $row->roles ); ?></td>
-								<td>
-									<?php if ( $focus_kind ) : ?>
-										<span class="<?php echo esc_attr( 'csa-wp-user-tracker-badge csa-wp-user-tracker-badge-' . $focus_kind ); ?>"><?php echo esc_html( self::admin_focus_badge( $focus_kind ) ); ?></span><br>
-									<?php endif; ?>
-									<strong><?php echo esc_html( $action_label ); ?></strong><br>
-									<small><code><?php echo esc_html( $row->action ); ?></code></small>
-								</td>
-								<td>
-									<?php echo esc_html( $object_label ); ?><br>
-									<small><code><?php echo esc_html( $row->object_type ); ?></code><?php echo $row->object_id ? ' #' . absint( $row->object_id ) : ''; ?></small>
-								</td>
-								<td>
-									<?php echo esc_html( $request_label ); ?><br>
-									<small><?php echo esc_html( $row->request_uri ); ?></small>
-								</td>
-								<td>
-									<?php if ( $row->context ) : ?>
-										<details>
-											<summary><?php esc_html_e( 'View', 'csa-wp-user-tracker' ); ?></summary>
-											<pre style="max-width: 360px; white-space: pre-wrap;"><?php echo esc_html( self::pretty_json( $row->context ) ); ?></pre>
-										</details>
-									<?php endif; ?>
-								</td>
+						</p>
+					</div>
+				</div>
+				<div class="csa-wp-user-tracker-table-wrap">
+					<table class="widefat csa-wp-user-tracker-table">
+						<thead>
+							<tr>
+								<th><?php esc_html_e( 'Time', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'Action', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'Object', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'Request', 'csa-wp-user-tracker' ); ?></th>
+								<th><?php esc_html_e( 'Context', 'csa-wp-user-tracker' ); ?></th>
 							</tr>
-						<?php endforeach; ?>
-					<?php endif; ?>
-				</tbody>
-			</table>
-			<?php if ( $total_pages > 1 ) : ?>
-				<?php self::render_admin_pagination( $page, $total_pages, $base_url ); ?>
-			<?php endif; ?>
+						</thead>
+						<tbody>
+							<?php if ( empty( $rows ) ) : ?>
+								<tr><td colspan="7"><?php esc_html_e( 'No activity found.', 'csa-wp-user-tracker' ); ?></td></tr>
+							<?php else : ?>
+								<?php foreach ( $rows as $row ) : ?>
+									<?php
+									$action_label  = self::admin_action_label( $row );
+									$object_label  = self::admin_object_label( $row );
+									$request_label = self::admin_request_label( $row );
+									$focus_kind    = self::admin_focus_kind( $row );
+									?>
+									<tr class="<?php echo $focus_kind ? esc_attr( 'csa-wp-user-tracker-focus-' . $focus_kind ) : ''; ?>">
+										<td><?php echo esc_html( mysql2date( 'Y-m-d H:i:s', $row->occurred_at, true ) ); ?></td>
+										<td>
+											<strong><?php echo esc_html( $row->display_name ? $row->display_name : $row->user_login ); ?></strong><br>
+											<code><?php echo esc_html( $row->user_login ); ?></code> #<?php echo absint( $row->user_id ); ?>
+										</td>
+										<td><?php echo esc_html( $row->roles ); ?></td>
+										<td>
+											<?php if ( $focus_kind ) : ?>
+												<span class="<?php echo esc_attr( 'csa-wp-user-tracker-badge csa-wp-user-tracker-badge-' . $focus_kind ); ?>"><?php echo esc_html( self::admin_focus_badge( $focus_kind ) ); ?></span><br>
+											<?php endif; ?>
+											<strong><?php echo esc_html( $action_label ); ?></strong><br>
+											<small><code><?php echo esc_html( $row->action ); ?></code></small>
+										</td>
+										<td>
+											<?php echo esc_html( $object_label ); ?><br>
+											<small><code><?php echo esc_html( $row->object_type ); ?></code><?php echo $row->object_id ? ' #' . absint( $row->object_id ) : ''; ?></small>
+										</td>
+										<td>
+											<?php echo esc_html( $request_label ); ?><br>
+											<small><?php echo esc_html( $row->request_uri ); ?></small>
+										</td>
+										<td>
+											<?php if ( $row->context ) : ?>
+												<details>
+													<summary><?php esc_html_e( 'View', 'csa-wp-user-tracker' ); ?></summary>
+													<pre class="csa-wp-user-tracker-context-preview"><?php echo esc_html( self::pretty_json( $row->context ) ); ?></pre>
+												</details>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</tbody>
+					</table>
+				</div>
+				<?php if ( $total_pages > 1 ) : ?>
+					<?php self::render_admin_pagination( $page, $total_pages, $base_url ); ?>
+				<?php endif; ?>
+			</section>
 		</div>
 		<?php
 	}
@@ -432,10 +555,10 @@ final class CSA_WP_User_Tracker {
 			return;
 		}
 		?>
-		<div class="tablenav" style="height: auto; margin: 12px 0;">
-			<div class="tablenav-pages" style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; float: none; width: 100%;">
+		<div class="tablenav csa-wp-user-tracker-pagination">
+			<div class="tablenav-pages">
 				<?php foreach ( $links as $link ) : ?>
-					<span style="display: inline-flex; align-items: center;"><?php echo wp_kses_post( $link ); ?></span>
+					<span><?php echo wp_kses_post( $link ); ?></span>
 				<?php endforeach; ?>
 			</div>
 		</div>
@@ -789,99 +912,96 @@ final class CSA_WP_User_Tracker {
 		$queue_count    = count( self::email_queue() );
 		$next_digest    = wp_next_scheduled( self::EMAIL_DIGEST_HOOK );
 		?>
-		<h2><?php esc_html_e( 'Email Updates', 'csa-wp-user-tracker' ); ?></h2>
-		<form method="post" style="max-width: 900px;">
+		<div class="csa-wp-user-tracker-panel-heading">
+			<div>
+				<p class="csa-wp-user-tracker-eyebrow"><?php esc_html_e( 'Notifications', 'csa-wp-user-tracker' ); ?></p>
+				<h2><?php esc_html_e( 'Email Updates', 'csa-wp-user-tracker' ); ?></h2>
+				<p class="csa-wp-user-tracker-panel-subtitle"><?php esc_html_e( 'Send immediate or digest emails when matching page or post activity is logged.', 'csa-wp-user-tracker' ); ?></p>
+			</div>
+			<span class="<?php echo esc_attr( $settings['enabled'] ? 'csa-wp-user-tracker-status-pill is-on' : 'csa-wp-user-tracker-status-pill is-off' ); ?>">
+				<?php echo esc_html( $settings['enabled'] ? __( 'Enabled', 'csa-wp-user-tracker' ) : __( 'Off', 'csa-wp-user-tracker' ) ); ?>
+			</span>
+		</div>
+		<form method="post" class="csa-wp-user-tracker-email-form">
 			<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
 			<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="save">
-			<table class="form-table" role="presentation">
-				<tbody>
-					<tr>
-						<th scope="row"><?php esc_html_e( 'Email updates', 'csa-wp-user-tracker' ); ?></th>
-						<td>
-							<label>
-								<input type="checkbox" name="csa_email_enabled" value="1" <?php checked( $settings['enabled'] ); ?>>
-								<?php esc_html_e( 'Send email updates for matching content updates.', 'csa-wp-user-tracker' ); ?>
+			<div class="csa-wp-user-tracker-settings-grid">
+				<div class="csa-wp-user-tracker-setting">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Email updates', 'csa-wp-user-tracker' ); ?></span>
+					<label class="csa-wp-user-tracker-choice-row">
+						<input type="checkbox" name="csa_email_enabled" value="1" <?php checked( $settings['enabled'] ); ?>>
+						<?php esc_html_e( 'Send email updates for matching content updates.', 'csa-wp-user-tracker' ); ?>
+					</label>
+				</div>
+				<label class="csa-wp-user-tracker-setting" for="csa-email-recipients">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Recipients', 'csa-wp-user-tracker' ); ?></span>
+					<input type="text" class="regular-text" id="csa-email-recipients" name="csa_email_recipients" value="<?php echo esc_attr( implode( ', ', $settings['recipients'] ) ); ?>" placeholder="<?php echo esc_attr( get_option( 'admin_email' ) ); ?>">
+					<span class="description"><?php esc_html_e( 'Separate multiple email addresses with commas.', 'csa-wp-user-tracker' ); ?></span>
+				</label>
+				<div class="csa-wp-user-tracker-setting">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Events', 'csa-wp-user-tracker' ); ?></span>
+					<label class="csa-wp-user-tracker-choice-row">
+						<input type="checkbox" name="csa_email_post_types[]" value="post" <?php checked( in_array( 'post', $settings['post_types'], true ) ); ?>>
+						<?php esc_html_e( 'Post changes', 'csa-wp-user-tracker' ); ?>
+					</label>
+					<label class="csa-wp-user-tracker-choice-row">
+						<input type="checkbox" name="csa_email_post_types[]" value="page" <?php checked( in_array( 'page', $settings['post_types'], true ) ); ?>>
+						<?php esc_html_e( 'Page changes', 'csa-wp-user-tracker' ); ?>
+					</label>
+					<p class="description"><?php esc_html_e( 'Includes create, update, status, trash, restore, and delete events.', 'csa-wp-user-tracker' ); ?></p>
+				</div>
+				<label class="csa-wp-user-tracker-setting" for="csa-email-scope">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Actor filter', 'csa-wp-user-tracker' ); ?></span>
+					<select id="csa-email-scope" name="csa_email_scope">
+						<option value="any" <?php selected( $settings['scope'], 'any' ); ?>><?php esc_html_e( 'Any tracked user', 'csa-wp-user-tracker' ); ?></option>
+						<option value="user" <?php selected( $settings['scope'], 'user' ); ?>><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></option>
+						<option value="roles" <?php selected( $settings['scope'], 'roles' ); ?>><?php esc_html_e( 'Selected roles', 'csa-wp-user-tracker' ); ?></option>
+					</select>
+				</label>
+				<label class="csa-wp-user-tracker-setting" for="csa-email-actor-user">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></span>
+					<input type="text" class="regular-text" id="csa-email-actor-user" name="csa_email_actor_user" value="<?php echo esc_attr( $settings['actor_user'] ); ?>" placeholder="<?php esc_attr_e( 'User ID, login, or email', 'csa-wp-user-tracker' ); ?>">
+					<span class="description"><?php esc_html_e( 'Used only when Actor filter is set to One user.', 'csa-wp-user-tracker' ); ?></span>
+				</label>
+				<div class="csa-wp-user-tracker-setting">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></span>
+					<div class="csa-wp-user-tracker-role-grid">
+						<?php foreach ( $editable_roles as $role_key => $role_data ) : ?>
+							<label class="csa-wp-user-tracker-choice-row">
+								<input type="checkbox" name="csa_email_roles[]" value="<?php echo esc_attr( $role_key ); ?>" <?php checked( in_array( $role_key, $settings['roles'], true ) ); ?>>
+								<?php echo esc_html( translate_user_role( $role_data['name'] ) ); ?>
 							</label>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="csa-email-recipients"><?php esc_html_e( 'Recipients', 'csa-wp-user-tracker' ); ?></label></th>
-						<td>
-							<input type="text" class="regular-text" id="csa-email-recipients" name="csa_email_recipients" value="<?php echo esc_attr( implode( ', ', $settings['recipients'] ) ); ?>" placeholder="<?php echo esc_attr( get_option( 'admin_email' ) ); ?>">
-							<p class="description"><?php esc_html_e( 'Separate multiple email addresses with commas.', 'csa-wp-user-tracker' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><?php esc_html_e( 'Events', 'csa-wp-user-tracker' ); ?></th>
-						<td>
-							<label style="margin-right: 16px;">
-								<input type="checkbox" name="csa_email_post_types[]" value="post" <?php checked( in_array( 'post', $settings['post_types'], true ) ); ?>>
-								<?php esc_html_e( 'Post changes', 'csa-wp-user-tracker' ); ?>
-							</label>
-							<label>
-								<input type="checkbox" name="csa_email_post_types[]" value="page" <?php checked( in_array( 'page', $settings['post_types'], true ) ); ?>>
-								<?php esc_html_e( 'Page changes', 'csa-wp-user-tracker' ); ?>
-							</label>
-							<p class="description"><?php esc_html_e( 'Includes create, update, status, trash, restore, and delete events.', 'csa-wp-user-tracker' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="csa-email-scope"><?php esc_html_e( 'Actor filter', 'csa-wp-user-tracker' ); ?></label></th>
-						<td>
-							<select id="csa-email-scope" name="csa_email_scope">
-								<option value="any" <?php selected( $settings['scope'], 'any' ); ?>><?php esc_html_e( 'Any tracked user', 'csa-wp-user-tracker' ); ?></option>
-								<option value="user" <?php selected( $settings['scope'], 'user' ); ?>><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></option>
-								<option value="roles" <?php selected( $settings['scope'], 'roles' ); ?>><?php esc_html_e( 'Selected roles', 'csa-wp-user-tracker' ); ?></option>
-							</select>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="csa-email-actor-user"><?php esc_html_e( 'One user', 'csa-wp-user-tracker' ); ?></label></th>
-						<td>
-							<input type="text" class="regular-text" id="csa-email-actor-user" name="csa_email_actor_user" value="<?php echo esc_attr( $settings['actor_user'] ); ?>" placeholder="<?php esc_attr_e( 'User ID, login, or email', 'csa-wp-user-tracker' ); ?>">
-							<p class="description"><?php esc_html_e( 'Used only when Actor filter is set to One user.', 'csa-wp-user-tracker' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><?php esc_html_e( 'Roles', 'csa-wp-user-tracker' ); ?></th>
-						<td>
-							<?php foreach ( $editable_roles as $role_key => $role_data ) : ?>
-								<label style="display: inline-block; margin: 0 16px 8px 0;">
-									<input type="checkbox" name="csa_email_roles[]" value="<?php echo esc_attr( $role_key ); ?>" <?php checked( in_array( $role_key, $settings['roles'], true ) ); ?>>
-									<?php echo esc_html( translate_user_role( $role_data['name'] ) ); ?>
-								</label>
-							<?php endforeach; ?>
-							<p class="description"><?php esc_html_e( 'Used only when Actor filter is set to Selected roles.', 'csa-wp-user-tracker' ); ?></p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="csa-email-cadence"><?php esc_html_e( 'Send timing', 'csa-wp-user-tracker' ); ?></label></th>
-						<td>
-							<select id="csa-email-cadence" name="csa_email_cadence">
-								<option value="immediate" <?php selected( $settings['cadence'], 'immediate' ); ?>><?php esc_html_e( 'Once triggered', 'csa-wp-user-tracker' ); ?></option>
-								<option value="daily" <?php selected( $settings['cadence'], 'daily' ); ?>><?php esc_html_e( 'Daily digest', 'csa-wp-user-tracker' ); ?></option>
-								<option value="weekly" <?php selected( $settings['cadence'], 'weekly' ); ?>><?php esc_html_e( 'Weekly digest', 'csa-wp-user-tracker' ); ?></option>
-							</select>
-							<p class="description">
-								<?php
-								if ( $next_digest ) {
-									printf(
-										/* translators: %s: scheduled datetime */
-										esc_html__( 'Next digest run: %s.', 'csa-wp-user-tracker' ),
-										esc_html( get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $next_digest ), 'Y-m-d H:i:s' ) )
-									);
-								} else {
-									esc_html_e( 'No digest is scheduled unless daily or weekly timing is enabled.', 'csa-wp-user-tracker' );
-								}
-								?>
-							</p>
-						</td>
-					</tr>
-				</tbody>
-			</table>
-			<?php submit_button( __( 'Save Email Updates', 'csa-wp-user-tracker' ) ); ?>
+						<?php endforeach; ?>
+					</div>
+					<p class="description"><?php esc_html_e( 'Used only when Actor filter is set to Selected roles.', 'csa-wp-user-tracker' ); ?></p>
+				</div>
+				<label class="csa-wp-user-tracker-setting" for="csa-email-cadence">
+					<span class="csa-wp-user-tracker-setting-title"><?php esc_html_e( 'Send timing', 'csa-wp-user-tracker' ); ?></span>
+					<select id="csa-email-cadence" name="csa_email_cadence">
+						<option value="immediate" <?php selected( $settings['cadence'], 'immediate' ); ?>><?php esc_html_e( 'Once triggered', 'csa-wp-user-tracker' ); ?></option>
+						<option value="daily" <?php selected( $settings['cadence'], 'daily' ); ?>><?php esc_html_e( 'Daily digest', 'csa-wp-user-tracker' ); ?></option>
+						<option value="weekly" <?php selected( $settings['cadence'], 'weekly' ); ?>><?php esc_html_e( 'Weekly digest', 'csa-wp-user-tracker' ); ?></option>
+					</select>
+					<span class="description">
+						<?php
+						if ( $next_digest ) {
+							printf(
+								/* translators: %s: scheduled datetime */
+								esc_html__( 'Next digest run: %s.', 'csa-wp-user-tracker' ),
+								esc_html( get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $next_digest ), 'Y-m-d H:i:s' ) )
+							);
+						} else {
+							esc_html_e( 'No digest is scheduled unless daily or weekly timing is enabled.', 'csa-wp-user-tracker' );
+						}
+						?>
+					</span>
+				</label>
+			</div>
+			<div class="csa-wp-user-tracker-form-actions">
+				<?php submit_button( __( 'Save Email Updates', 'csa-wp-user-tracker' ), 'primary', 'submit', false ); ?>
+			</div>
 		</form>
-		<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: -8px 0 4px;">
+		<div class="csa-wp-user-tracker-email-actions">
 			<form method="post">
 				<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
 				<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
@@ -893,8 +1013,7 @@ final class CSA_WP_User_Tracker {
 				<?php submit_button( __( 'Send Test Email', 'csa-wp-user-tracker' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<p class="description" style="margin: 0 0 20px;"><?php esc_html_e( 'The test email uses the saved recipients above. Save changes before testing new recipients.', 'csa-wp-user-tracker' ); ?></p>
-		<hr>
+		<p class="description csa-wp-user-tracker-form-note"><?php esc_html_e( 'The test email uses the saved recipients above. Save changes before testing new recipients.', 'csa-wp-user-tracker' ); ?></p>
 		<?php
 	}
 
