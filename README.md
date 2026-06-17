@@ -37,6 +37,8 @@ After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_opti
 
 The activity list shows plain-English action, object, and request labels for non-technical users, while keeping the raw stored action and object type visible in small text for filtering and troubleshooting. WordPress trash events display as deleted and moved to Trash; permanent delete events display as deleted permanently.
 
+Use the **Focus page/post edits and deletes** toggle to show only post/page edit, status-change, trash, and permanent-delete rows. Matching rows are also highlighted in the full activity list with edit/delete badges.
+
 ### Email Updates
 
 The admin page includes email update rules for content changes. Enable email updates, add one or more recipients, and choose whether to watch post changes, page changes, or both. Matching can be scoped to any tracked user, one user by ID/login/email, or selected roles.

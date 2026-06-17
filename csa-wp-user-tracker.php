@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.14
+ * Version: 0.1.15
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.14' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.15' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -284,9 +284,22 @@ final class CSA_WP_User_Tracker {
 				<?php esc_html_e( 'Loaded plugin version:', 'csa-wp-user-tracker' ); ?>
 				<code><?php echo esc_html( CSA_WP_USER_TRACKER_VERSION ); ?></code>
 			</p>
+			<style>
+				.csa-wp-user-tracker-filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 16px 0 20px; }
+				.csa-wp-user-tracker-filter-bar label { display: inline-flex; flex-direction: column; gap: 4px; }
+				.csa-wp-user-tracker-focus-toggle { align-items: center !important; align-self: center; background: #fff8e5; border: 1px solid #dba617; border-radius: 4px; color: #1d2327; flex-direction: row !important; gap: 6px !important; padding: 6px 8px; }
+				.csa-wp-user-tracker-focus-note { border-left: 4px solid #dba617; padding-left: 10px; }
+				.widefat.striped tbody tr.csa-wp-user-tracker-focus-edit td { background: #fff8e5; }
+				.widefat.striped tbody tr.csa-wp-user-tracker-focus-delete td { background: #fcf0f1; }
+				.csa-wp-user-tracker-focus-edit td:first-child { border-left: 4px solid #dba617; }
+				.csa-wp-user-tracker-focus-delete td:first-child { border-left: 4px solid #d63638; }
+				.csa-wp-user-tracker-badge { border-radius: 999px; display: inline-block; font-size: 11px; font-weight: 600; line-height: 1; margin-bottom: 4px; padding: 4px 7px; text-transform: uppercase; }
+				.csa-wp-user-tracker-badge-edit { background: #f0b849; color: #1d2327; }
+				.csa-wp-user-tracker-badge-delete { background: #d63638; color: #fff; }
+			</style>
 			<?php self::render_email_settings_notices(); ?>
 			<?php self::render_email_settings_form(); ?>
-			<form method="get" style="margin: 16px 0 20px;">
+			<form method="get" class="csa-wp-user-tracker-filter-bar">
 				<input type="hidden" name="page" value="<?php echo esc_attr( self::ADMIN_PAGE_SLUG ); ?>">
 				<label>
 					<?php esc_html_e( 'User', 'csa-wp-user-tracker' ); ?>
@@ -308,10 +321,17 @@ final class CSA_WP_User_Tracker {
 					<?php esc_html_e( 'To', 'csa-wp-user-tracker' ); ?>
 					<input type="date" name="activity_to" value="<?php echo esc_attr( $filters['to'] ); ?>">
 				</label>
+				<label class="csa-wp-user-tracker-focus-toggle">
+					<input type="checkbox" name="activity_focus_content_edits" value="1" <?php checked( $filters['focus_content_edits'] ); ?>>
+					<?php esc_html_e( 'Focus page/post edits and deletes', 'csa-wp-user-tracker' ); ?>
+				</label>
 				<?php submit_button( __( 'Filter', 'csa-wp-user-tracker' ), 'secondary', '', false ); ?>
 				<a class="button" href="<?php echo esc_url( menu_page_url( self::ADMIN_PAGE_SLUG, false ) ); ?>"><?php esc_html_e( 'Reset', 'csa-wp-user-tracker' ); ?></a>
 				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'csa-wp-user-tracker' ); ?></a>
 			</form>
+			<?php if ( $filters['focus_content_edits'] ) : ?>
+				<p class="description csa-wp-user-tracker-focus-note"><?php esc_html_e( 'Showing only page/post edit, status-change, trash, and permanent-delete activity.', 'csa-wp-user-tracker' ); ?></p>
+			<?php endif; ?>
 			<p>
 				<?php
 				printf(
@@ -344,8 +364,9 @@ final class CSA_WP_User_Tracker {
 							$action_label  = self::admin_action_label( $row );
 							$object_label  = self::admin_object_label( $row );
 							$request_label = self::admin_request_label( $row );
+							$focus_kind    = self::admin_focus_kind( $row );
 							?>
-							<tr>
+							<tr class="<?php echo $focus_kind ? esc_attr( 'csa-wp-user-tracker-focus-' . $focus_kind ) : ''; ?>">
 								<td><?php echo esc_html( mysql2date( 'Y-m-d H:i:s', $row->occurred_at, true ) ); ?></td>
 								<td>
 									<strong><?php echo esc_html( $row->display_name ? $row->display_name : $row->user_login ); ?></strong><br>
@@ -353,6 +374,9 @@ final class CSA_WP_User_Tracker {
 								</td>
 								<td><?php echo esc_html( $row->roles ); ?></td>
 								<td>
+									<?php if ( $focus_kind ) : ?>
+										<span class="<?php echo esc_attr( 'csa-wp-user-tracker-badge csa-wp-user-tracker-badge-' . $focus_kind ); ?>"><?php echo esc_html( self::admin_focus_badge( $focus_kind ) ); ?></span><br>
+									<?php endif; ?>
 									<strong><?php echo esc_html( $action_label ); ?></strong><br>
 									<small><code><?php echo esc_html( $row->action ); ?></code></small>
 								</td>
@@ -590,6 +614,43 @@ final class CSA_WP_User_Tracker {
 		}
 
 		return '' !== $method ? sprintf( __( '%1$s request in %2$s', 'csa-wp-user-tracker' ), $method, $area ) : sprintf( __( 'Request in %s', 'csa-wp-user-tracker' ), $area );
+	}
+
+	/**
+	 * Page/post actions emphasized in the activity table.
+	 *
+	 * @return array
+	 */
+	private static function admin_focus_actions() {
+		return array( 'post_updated', 'post_status_changed', 'post_trashed', 'post_deleted' );
+	}
+
+	/**
+	 * Return edit/delete focus type for a row.
+	 *
+	 * @param array|object $row Log row.
+	 * @return string
+	 */
+	private static function admin_focus_kind( $row ) {
+		$row         = is_object( $row ) ? get_object_vars( $row ) : (array) $row;
+		$object_type = isset( $row['object_type'] ) ? sanitize_key( $row['object_type'] ) : '';
+		$action      = isset( $row['action'] ) ? sanitize_key( $row['action'] ) : '';
+
+		if ( ! in_array( $object_type, array( 'post', 'page' ), true ) || ! in_array( $action, self::admin_focus_actions(), true ) ) {
+			return '';
+		}
+
+		return in_array( $action, array( 'post_trashed', 'post_deleted' ), true ) ? 'delete' : 'edit';
+	}
+
+	/**
+	 * Badge label for focused rows.
+	 *
+	 * @param string $kind Focus kind.
+	 * @return string
+	 */
+	private static function admin_focus_badge( $kind ) {
+		return 'delete' === $kind ? __( 'Delete', 'csa-wp-user-tracker' ) : __( 'Edit', 'csa-wp-user-tracker' );
 	}
 
 	/**
@@ -2414,6 +2475,7 @@ final class CSA_WP_User_Tracker {
 			'object_type' => isset( $_GET['activity_object_type'] ) ? sanitize_key( wp_unslash( $_GET['activity_object_type'] ) ) : '',
 			'from'        => isset( $_GET['activity_from'] ) ? sanitize_text_field( wp_unslash( $_GET['activity_from'] ) ) : '',
 			'to'          => isset( $_GET['activity_to'] ) ? sanitize_text_field( wp_unslash( $_GET['activity_to'] ) ) : '',
+			'focus_content_edits' => isset( $_GET['activity_focus_content_edits'] ) && '1' === wp_unslash( $_GET['activity_focus_content_edits'] ),
 		);
 	}
 
@@ -2443,6 +2505,12 @@ final class CSA_WP_User_Tracker {
 
 		if ( '' !== $filters['object_type'] ) {
 			$where[] = $wpdb->prepare( 'object_type = %s', $filters['object_type'] );
+		}
+
+		if ( ! empty( $filters['focus_content_edits'] ) ) {
+			$actions      = self::admin_focus_actions();
+			$placeholders = implode( ',', array_fill( 0, count( $actions ), '%s' ) );
+			$where[]      = $wpdb->prepare( "object_type IN ('post','page') AND action IN ({$placeholders})", $actions ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 
 		if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $filters['from'] ) ) {
