@@ -35,6 +35,8 @@ Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pan
 
 After activation, go to **Tools > CSA WP User Tracker**. Users need `manage_options` by default. Use the `csa_wp_user_tracker_admin_capability` filter to change the capability.
 
+The activity list shows plain-English action, object, and request labels for non-technical users, while keeping the raw stored action and object type visible in small text for filtering and troubleshooting. WordPress trash events display as deleted and moved to Trash; permanent delete events display as deleted permanently.
+
 ### Email Updates
 
 The admin page includes email update rules for content changes. Enable email updates, add one or more recipients, and choose whether to watch post changes, page changes, or both. Matching can be scoped to any tracked user, one user by ID/login/email, or selected roles.

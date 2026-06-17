@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.12
+ * Version: 0.1.13
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.12' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.13' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -340,6 +340,11 @@ final class CSA_WP_User_Tracker {
 						<tr><td colspan="7"><?php esc_html_e( 'No activity found.', 'csa-wp-user-tracker' ); ?></td></tr>
 					<?php else : ?>
 						<?php foreach ( $rows as $row ) : ?>
+							<?php
+							$action_label  = self::admin_action_label( $row );
+							$object_label  = self::admin_object_label( $row );
+							$request_label = self::admin_request_label( $row );
+							?>
 							<tr>
 								<td><?php echo esc_html( mysql2date( 'Y-m-d H:i:s', $row->occurred_at, true ) ); ?></td>
 								<td>
@@ -347,18 +352,16 @@ final class CSA_WP_User_Tracker {
 									<code><?php echo esc_html( $row->user_login ); ?></code> #<?php echo absint( $row->user_id ); ?>
 								</td>
 								<td><?php echo esc_html( $row->roles ); ?></td>
-								<td><code><?php echo esc_html( $row->action ); ?></code></td>
 								<td>
-									<?php echo esc_html( $row->object_type ); ?>
-									<?php if ( $row->object_id ) : ?>
-										#<?php echo absint( $row->object_id ); ?>
-									<?php endif; ?>
-									<?php if ( $row->object_name ) : ?>
-										<br><?php echo esc_html( wp_trim_words( $row->object_name, 12 ) ); ?>
-									<?php endif; ?>
+									<strong><?php echo esc_html( $action_label ); ?></strong><br>
+									<small><code><?php echo esc_html( $row->action ); ?></code></small>
 								</td>
 								<td>
-									<code><?php echo esc_html( $row->request_method ); ?></code><br>
+									<?php echo esc_html( $object_label ); ?><br>
+									<small><code><?php echo esc_html( $row->object_type ); ?></code><?php echo $row->object_id ? ' #' . absint( $row->object_id ) : ''; ?></small>
+								</td>
+								<td>
+									<?php echo esc_html( $request_label ); ?><br>
 									<small><?php echo esc_html( $row->request_uri ); ?></small>
 								</td>
 								<td>
@@ -413,6 +416,261 @@ final class CSA_WP_User_Tracker {
 			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Human-readable action label for the activity table.
+	 *
+	 * @param object $row Log row.
+	 * @return string
+	 */
+	private static function admin_action_label( $row ) {
+		$object_type = self::lowercase_first( self::admin_object_type_label( $row->object_type ) );
+		$context     = self::row_context_array( $row );
+
+		switch ( $row->action ) {
+			case 'login_success':
+				return __( 'Logged in', 'csa-wp-user-tracker' );
+			case 'login_failed':
+				return __( 'Tried to log in but failed', 'csa-wp-user-tracker' );
+			case 'logout':
+				return __( 'Logged out', 'csa-wp-user-tracker' );
+			case 'admin_screen_viewed':
+				return __( 'Opened a WordPress admin screen', 'csa-wp-user-tracker' );
+			case 'ajax_request':
+				return __( 'Ran a background admin request', 'csa-wp-user-tracker' );
+			case 'frontend_view':
+				return __( 'Viewed content on the public site', 'csa-wp-user-tracker' );
+			case 'rest_request':
+				return __( 'Used the WordPress REST API', 'csa-wp-user-tracker' );
+			case 'post_created':
+				return sprintf( __( 'Created %s', 'csa-wp-user-tracker' ), $object_type );
+			case 'post_updated':
+				return sprintf( __( 'Updated %s', 'csa-wp-user-tracker' ), $object_type );
+			case 'post_status_changed':
+				if ( ! empty( $context['from'] ) && ! empty( $context['to'] ) ) {
+					return sprintf(
+						__( 'Changed %1$s status from %2$s to %3$s', 'csa-wp-user-tracker' ),
+						$object_type,
+						self::slug_to_label( $context['from'] ),
+						self::slug_to_label( $context['to'] )
+					);
+				}
+				return sprintf( __( 'Changed %s status', 'csa-wp-user-tracker' ), $object_type );
+			case 'post_trashed':
+				return sprintf( __( 'Deleted %s (moved to Trash)', 'csa-wp-user-tracker' ), $object_type );
+			case 'post_untrashed':
+				return sprintf( __( 'Restored %s from Trash', 'csa-wp-user-tracker' ), $object_type );
+			case 'post_deleted':
+				return sprintf( __( 'Deleted %s permanently', 'csa-wp-user-tracker' ), $object_type );
+			case 'attachment_added':
+				return __( 'Uploaded media file', 'csa-wp-user-tracker' );
+			case 'attachment_updated':
+				return __( 'Updated media file', 'csa-wp-user-tracker' );
+			case 'attachment_deleted':
+				return __( 'Deleted media file permanently', 'csa-wp-user-tracker' );
+			case 'term_created':
+				return sprintf( __( 'Created %s', 'csa-wp-user-tracker' ), $object_type );
+			case 'term_updated':
+				return sprintf( __( 'Updated %s', 'csa-wp-user-tracker' ), $object_type );
+			case 'term_deleted':
+				return sprintf( __( 'Deleted %s', 'csa-wp-user-tracker' ), $object_type );
+			case 'comment_created':
+				return __( 'Added comment', 'csa-wp-user-tracker' );
+			case 'comment_updated':
+				return __( 'Updated comment', 'csa-wp-user-tracker' );
+			case 'comment_deleted':
+			case 'deleted_comment':
+				return __( 'Deleted comment permanently', 'csa-wp-user-tracker' );
+			case 'trashed_comment':
+				return __( 'Deleted comment (moved to Trash)', 'csa-wp-user-tracker' );
+			case 'untrashed_comment':
+				return __( 'Restored comment from Trash', 'csa-wp-user-tracker' );
+			case 'spam_comment':
+				return __( 'Marked comment as spam', 'csa-wp-user-tracker' );
+			case 'unspam_comment':
+				return __( 'Unmarked comment as spam', 'csa-wp-user-tracker' );
+			case 'user_created':
+				return __( 'Created user account', 'csa-wp-user-tracker' );
+			case 'user_updated':
+				return __( 'Updated user account', 'csa-wp-user-tracker' );
+			case 'user_deleted':
+				return __( 'Deleted user account', 'csa-wp-user-tracker' );
+			case 'user_role_set':
+				return __( 'Changed user role', 'csa-wp-user-tracker' );
+			case 'user_role_added':
+				return __( 'Added user role', 'csa-wp-user-tracker' );
+			case 'user_role_removed':
+				return __( 'Removed user role', 'csa-wp-user-tracker' );
+			case 'option_added':
+				return __( 'Added site setting', 'csa-wp-user-tracker' );
+			case 'option_updated':
+				return __( 'Updated site setting', 'csa-wp-user-tracker' );
+			case 'option_deleted':
+				return __( 'Deleted site setting', 'csa-wp-user-tracker' );
+			case 'plugin_activated':
+				return __( 'Activated plugin', 'csa-wp-user-tracker' );
+			case 'plugin_deactivated':
+				return __( 'Deactivated plugin', 'csa-wp-user-tracker' );
+			case 'theme_switched':
+				return __( 'Changed site theme', 'csa-wp-user-tracker' );
+			case 'upgrader_process_complete':
+				return __( 'Completed a WordPress update', 'csa-wp-user-tracker' );
+			case 'email_update_sent':
+				return __( 'Sent email update', 'csa-wp-user-tracker' );
+		}
+
+		return self::slug_to_label( $row->action );
+	}
+
+	/**
+	 * Human-readable object label for the activity table.
+	 *
+	 * @param object $row Log row.
+	 * @return string
+	 */
+	private static function admin_object_label( $row ) {
+		$type  = self::admin_object_type_label( $row->object_type );
+		$name  = trim( wp_strip_all_tags( (string) $row->object_name ) );
+		$label = $type;
+
+		if ( $row->object_id ) {
+			$label .= ' #' . absint( $row->object_id );
+		}
+
+		if ( '' !== $name ) {
+			$label .= ': ' . wp_trim_words( wp_specialchars_decode( $name, ENT_QUOTES ), 12, '...' );
+		}
+
+		return $label;
+	}
+
+	/**
+	 * Human-readable request label for the activity table.
+	 *
+	 * @param object $row Log row.
+	 * @return string
+	 */
+	private static function admin_request_label( $row ) {
+		$method = strtoupper( (string) $row->request_method );
+		$uri    = (string) $row->request_uri;
+
+		if ( 'email_update_sent' === $row->action ) {
+			return __( 'Sent through WordPress mail', 'csa-wp-user-tracker' );
+		}
+
+		if ( '' === $method && '' === $uri ) {
+			return __( 'No browser request recorded', 'csa-wp-user-tracker' );
+		}
+
+		if ( false !== strpos( $uri, '/wp-admin/admin-ajax.php' ) ) {
+			return __( 'Background admin request', 'csa-wp-user-tracker' );
+		}
+
+		if ( 'rest_request' === $row->action ) {
+			return '' !== $method ? sprintf( __( 'REST API %s request', 'csa-wp-user-tracker' ), $method ) : __( 'REST API request', 'csa-wp-user-tracker' );
+		}
+
+		$area = false !== strpos( $uri, '/wp-admin/' ) ? __( 'WordPress admin', 'csa-wp-user-tracker' ) : __( 'public site', 'csa-wp-user-tracker' );
+
+		if ( in_array( $row->action, array( 'post_trashed', 'post_deleted', 'attachment_deleted', 'comment_deleted', 'deleted_comment', 'term_deleted', 'user_deleted', 'option_deleted' ), true ) ) {
+			return sprintf( __( 'Submitted a delete action in %s', 'csa-wp-user-tracker' ), $area );
+		}
+
+		switch ( $method ) {
+			case 'GET':
+				return sprintf( __( 'Opened a page in %s', 'csa-wp-user-tracker' ), $area );
+			case 'POST':
+				return sprintf( __( 'Submitted changes in %s', 'csa-wp-user-tracker' ), $area );
+			case 'DELETE':
+				return sprintf( __( 'Sent a delete request to %s', 'csa-wp-user-tracker' ), $area );
+			case 'PUT':
+			case 'PATCH':
+				return sprintf( __( 'Submitted an update request to %s', 'csa-wp-user-tracker' ), $area );
+		}
+
+		return '' !== $method ? sprintf( __( '%1$s request in %2$s', 'csa-wp-user-tracker' ), $method, $area ) : sprintf( __( 'Request in %s', 'csa-wp-user-tracker' ), $area );
+	}
+
+	/**
+	 * Human-readable object type label.
+	 *
+	 * @param string $object_type Object type.
+	 * @return string
+	 */
+	private static function admin_object_type_label( $object_type ) {
+		$object_type = sanitize_key( $object_type );
+
+		$labels = array(
+			'404'          => __( '404 page', 'csa-wp-user-tracker' ),
+			'admin_screen' => __( 'Admin screen', 'csa-wp-user-tracker' ),
+			'ajax'         => __( 'Background request', 'csa-wp-user-tracker' ),
+			'attachment'   => __( 'Media file', 'csa-wp-user-tracker' ),
+			'comment'      => __( 'Comment', 'csa-wp-user-tracker' ),
+			'email_update' => __( 'Email update', 'csa-wp-user-tracker' ),
+			'frontend'     => __( 'Public page', 'csa-wp-user-tracker' ),
+			'home'         => __( 'Home page', 'csa-wp-user-tracker' ),
+			'option'       => __( 'Site setting', 'csa-wp-user-tracker' ),
+			'plugin'       => __( 'Plugin', 'csa-wp-user-tracker' ),
+			'post'         => __( 'Post', 'csa-wp-user-tracker' ),
+			'page'         => __( 'Page', 'csa-wp-user-tracker' ),
+			'rest_route'   => __( 'REST API route', 'csa-wp-user-tracker' ),
+			'search'       => __( 'Search results', 'csa-wp-user-tracker' ),
+			'theme'        => __( 'Theme', 'csa-wp-user-tracker' ),
+			'user'         => __( 'User', 'csa-wp-user-tracker' ),
+		);
+
+		if ( isset( $labels[ $object_type ] ) ) {
+			return $labels[ $object_type ];
+		}
+
+		$post_type = get_post_type_object( $object_type );
+		if ( $post_type && ! empty( $post_type->labels->singular_name ) ) {
+			return $post_type->labels->singular_name;
+		}
+
+		$taxonomy = get_taxonomy( $object_type );
+		if ( $taxonomy && ! empty( $taxonomy->labels->singular_name ) ) {
+			return $taxonomy->labels->singular_name;
+		}
+
+		return self::slug_to_label( $object_type );
+	}
+
+	/**
+	 * Decode row context safely.
+	 *
+	 * @param object $row Log row.
+	 * @return array
+	 */
+	private static function row_context_array( $row ) {
+		if ( empty( $row->context ) || ! is_string( $row->context ) ) {
+			return array();
+		}
+
+		$context = json_decode( $row->context, true );
+		return is_array( $context ) ? $context : array();
+	}
+
+	/**
+	 * Convert a stored slug to title-case words.
+	 *
+	 * @param string $slug Slug.
+	 * @return string
+	 */
+	private static function slug_to_label( $slug ) {
+		$label = trim( preg_replace( '/[-_]+/', ' ', (string) $slug ) );
+		return '' !== $label ? ucwords( strtolower( $label ) ) : __( 'Unknown', 'csa-wp-user-tracker' );
+	}
+
+	/**
+	 * Lowercase the first character in an ASCII label.
+	 *
+	 * @param string $label Label.
+	 * @return string
+	 */
+	private static function lowercase_first( $label ) {
+		return '' === $label ? $label : strtolower( substr( $label, 0, 1 ) ) . substr( $label, 1 );
 	}
 
 	/**
