@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.9
+ * Version: 0.1.10
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.9' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.10' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -479,12 +479,13 @@ final class CSA_WP_User_Tracker {
 						<td>
 							<label style="margin-right: 16px;">
 								<input type="checkbox" name="csa_email_post_types[]" value="post" <?php checked( in_array( 'post', $settings['post_types'], true ) ); ?>>
-								<?php esc_html_e( 'Post updates', 'csa-wp-user-tracker' ); ?>
+								<?php esc_html_e( 'Post changes', 'csa-wp-user-tracker' ); ?>
 							</label>
 							<label>
 								<input type="checkbox" name="csa_email_post_types[]" value="page" <?php checked( in_array( 'page', $settings['post_types'], true ) ); ?>>
-								<?php esc_html_e( 'Page updates', 'csa-wp-user-tracker' ); ?>
+								<?php esc_html_e( 'Page changes', 'csa-wp-user-tracker' ); ?>
 							</label>
+							<p class="description"><?php esc_html_e( 'Includes create, update, status, trash, restore, and delete events.', 'csa-wp-user-tracker' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -1511,7 +1512,7 @@ final class CSA_WP_User_Tracker {
 	private static function log_row_matches_email_settings( $row, $settings ) {
 		$row = self::normalize_log_row( $row );
 
-		if ( 'post_updated' !== $row['action'] || ! in_array( $row['object_type'], $settings['post_types'], true ) ) {
+		if ( ! in_array( $row['action'], array_keys( self::email_content_actions() ), true ) || ! in_array( $row['object_type'], $settings['post_types'], true ) ) {
 			return false;
 		}
 
@@ -1538,6 +1539,33 @@ final class CSA_WP_User_Tracker {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Content actions that can trigger email updates.
+	 *
+	 * @return array
+	 */
+	private static function email_content_actions() {
+		return array(
+			'post_created'        => __( 'created', 'csa-wp-user-tracker' ),
+			'post_updated'        => __( 'updated', 'csa-wp-user-tracker' ),
+			'post_status_changed' => __( 'status changed', 'csa-wp-user-tracker' ),
+			'post_trashed'        => __( 'trashed', 'csa-wp-user-tracker' ),
+			'post_untrashed'      => __( 'restored', 'csa-wp-user-tracker' ),
+			'post_deleted'        => __( 'deleted', 'csa-wp-user-tracker' ),
+		);
+	}
+
+	/**
+	 * Human label for an email content action.
+	 *
+	 * @param string $action Log action.
+	 * @return string
+	 */
+	private static function email_action_label( $action ) {
+		$actions = self::email_content_actions();
+		return isset( $actions[ $action ] ) ? $actions[ $action ] : $action;
 	}
 
 	/**
@@ -1679,15 +1707,16 @@ final class CSA_WP_User_Tracker {
 		$subject   = $digest
 			? sprintf(
 				/* translators: 1: site name, 2: count */
-				__( '[%1$s] CSA user tracker digest (%2$d updates)', 'csa-wp-user-tracker' ),
+				__( '[%1$s] CSA user tracker digest (%2$d changes)', 'csa-wp-user-tracker' ),
 				$site_name,
 				$count
 			)
 			: sprintf(
-				/* translators: 1: site name, 2: object type, 3: object name */
-				__( '[%1$s] %2$s updated: %3$s', 'csa-wp-user-tracker' ),
+				/* translators: 1: site name, 2: object type, 3: action label, 4: object name */
+				__( '[%1$s] %2$s %3$s: %4$s', 'csa-wp-user-tracker' ),
 				$site_name,
 				ucfirst( $rows[0]['object_type'] ),
+				self::email_action_label( $rows[0]['action'] ),
 				$rows[0]['object_name']
 			);
 
@@ -1739,7 +1768,7 @@ final class CSA_WP_User_Tracker {
 		$lines   = array();
 		$lines[] = sprintf(
 			/* translators: %d: update count */
-			_n( '%d content update matched your CSA WP User Tracker rule.', '%d content updates matched your CSA WP User Tracker rule.', count( $rows ), 'csa-wp-user-tracker' ),
+			_n( '%d content change matched your CSA WP User Tracker rule.', '%d content changes matched your CSA WP User Tracker rule.', count( $rows ), 'csa-wp-user-tracker' ),
 			count( $rows )
 		);
 		$lines[] = sprintf( __( 'Site: %s', 'csa-wp-user-tracker' ), home_url( '/' ) );
@@ -1753,6 +1782,7 @@ final class CSA_WP_User_Tracker {
 				absint( $row['object_id'] ),
 				wp_specialchars_decode( $row['object_name'], ENT_QUOTES )
 			);
+			$lines[] = sprintf( __( 'Action: %s', 'csa-wp-user-tracker' ), self::email_action_label( $row['action'] ) );
 			$lines[] = sprintf( __( 'Time: %s', 'csa-wp-user-tracker' ), mysql2date( 'Y-m-d H:i:s', $row['occurred_at'], true ) );
 			$lines[] = sprintf( __( 'Updated by: %1$s (%2$s #%3$d)', 'csa-wp-user-tracker' ), $row['display_name'] ? $row['display_name'] : $row['user_login'], $row['user_login'], absint( $row['user_id'] ) );
 			$lines[] = sprintf( __( 'Roles: %s', 'csa-wp-user-tracker' ), $row['roles'] );
