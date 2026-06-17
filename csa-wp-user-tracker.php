@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.11
+ * Version: 0.1.12
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.11' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.12' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -1726,7 +1726,61 @@ final class CSA_WP_User_Tracker {
 
 		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
 
-		return (bool) wp_mail( $settings['recipients'], $subject, self::build_email_body( $rows, $digest ), $headers );
+		$sent = (bool) wp_mail( $settings['recipients'], $subject, self::build_email_body( $rows, $digest ), $headers );
+		if ( $sent ) {
+			self::log_email_update_sent( $rows, $settings, $digest );
+		}
+
+		return $sent;
+	}
+
+	/**
+	 * Log a successful email update delivery.
+	 *
+	 * @param array $rows Log rows included in the email.
+	 * @param array $settings Email settings.
+	 * @param bool  $digest Whether this is a digest.
+	 */
+	private static function log_email_update_sent( $rows, $settings, $digest ) {
+		$first_row = reset( $rows );
+		if ( ! is_array( $first_row ) ) {
+			return;
+		}
+
+		$user_id = $digest ? get_current_user_id() : absint( $first_row['user_id'] );
+		if ( ! $user_id ) {
+			return;
+		}
+
+		$user = get_user_by( 'id', $user_id );
+		if ( ! $user instanceof WP_User ) {
+			return;
+		}
+
+		$source_log_ids = array();
+		foreach ( $rows as $row ) {
+			if ( ! empty( $row['id'] ) ) {
+				$source_log_ids[] = absint( $row['id'] );
+			}
+		}
+
+		self::log_as_user(
+			$user,
+			'email_update_sent',
+			'email_update',
+			0,
+			$digest ? __( 'Digest email sent', 'csa-wp-user-tracker' ) : __( 'Once triggered email sent', 'csa-wp-user-tracker' ),
+			array(
+				'delivery'           => $digest ? 'digest' : 'once_triggered',
+				'matched_count'      => count( $rows ),
+				'recipient_count'    => count( $settings['recipients'] ),
+				'source_log_ids'     => $source_log_ids,
+				'source_action'      => $first_row['action'],
+				'source_object_type' => $first_row['object_type'],
+				'source_object_id'   => $first_row['object_id'],
+				'source_object_name' => $first_row['object_name'],
+			)
+		);
 	}
 
 	/**

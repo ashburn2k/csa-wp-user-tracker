@@ -22,6 +22,7 @@ Then sync the plugin into Pantheon with the release workflow or `bin/sync-to-pan
 - User role changes.
 - Option changes by option name only, excluding noisy internal options and transients.
 - Plugin activation/deactivation, theme switches, and upgrader operations.
+- Successful email update deliveries triggered by matching content events.
 
 ## Privacy Notes
 
