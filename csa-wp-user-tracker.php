@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.17
+ * Version: 0.1.18
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.17' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.18' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -320,11 +320,17 @@ final class CSA_WP_User_Tracker {
 				.csa-wp-user-tracker-focus-toggle { align-items: center !important; background: #fff7ed; border: 1px solid #fdba74; border-radius: 6px; color: #1d2327; flex-direction: row !important; font-size: 13px !important; gap: 7px !important; grid-column: 1 / -1; padding: 9px 10px; }
 				.csa-wp-user-tracker-focus-note { background: #fffbeb; border-left: 4px solid #d97706; margin: 12px 0 0; padding: 9px 12px; }
 				.csa-wp-user-tracker-email-details { margin: 0; }
-				.csa-wp-user-tracker-email-summary { align-items: center; cursor: pointer; display: flex; gap: 14px; justify-content: space-between; list-style: none; }
+				.csa-wp-user-tracker-email-summary { align-items: center; cursor: pointer; display: flex; gap: 14px; justify-content: space-between; list-style: none; padding: 2px 0; }
 				.csa-wp-user-tracker-email-summary::-webkit-details-marker { display: none; }
+				.csa-wp-user-tracker-email-summary:focus { outline: 2px solid #0f6b78; outline-offset: 6px; }
 				.csa-wp-user-tracker-email-summary h2 { color: #0f172a; font-size: 18px; line-height: 1.3; margin: 0; }
 				.csa-wp-user-tracker-email-summary-meta { align-items: center; display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-				.csa-wp-user-tracker-toggle-pill { border: 1px solid #cbd5e1; border-radius: 999px; color: #334155; display: inline-flex; font-size: 12px; font-weight: 700; line-height: 1; padding: 7px 9px; }
+				.csa-wp-user-tracker-toggle-pill { align-items: center; background: #0f6b78; border: 1px solid #0f6b78; border-radius: 6px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18); color: #fff; display: inline-flex; font-size: 13px; font-weight: 700; gap: 7px; line-height: 1; min-height: 34px; padding: 9px 12px; }
+				.csa-wp-user-tracker-email-summary:hover .csa-wp-user-tracker-toggle-pill,
+				.csa-wp-user-tracker-email-summary:focus .csa-wp-user-tracker-toggle-pill { background: #0b5963; border-color: #0b5963; }
+				.csa-wp-user-tracker-toggle-open,
+				.csa-wp-user-tracker-toggle-close { align-items: center; display: inline-flex; gap: 7px; }
+				.csa-wp-user-tracker-toggle-icon { align-items: center; background: rgba(255, 255, 255, 0.18); border-radius: 999px; display: inline-flex; font-size: 16px; height: 18px; justify-content: center; line-height: 1; width: 18px; }
 				.csa-wp-user-tracker-email-details[open] .csa-wp-user-tracker-toggle-open,
 				.csa-wp-user-tracker-email-details:not([open]) .csa-wp-user-tracker-toggle-close { display: none; }
 				.csa-wp-user-tracker-email-details-body { border-top: 1px solid #e2e8f0; margin-top: 14px; padding-top: 2px; }
@@ -936,8 +942,8 @@ final class CSA_WP_User_Tracker {
 						<?php echo esc_html( $settings['enabled'] ? __( 'Enabled', 'csa-wp-user-tracker' ) : __( 'Off', 'csa-wp-user-tracker' ) ); ?>
 					</span>
 					<span class="csa-wp-user-tracker-toggle-pill">
-						<span class="csa-wp-user-tracker-toggle-open"><?php esc_html_e( 'Expand', 'csa-wp-user-tracker' ); ?></span>
-						<span class="csa-wp-user-tracker-toggle-close"><?php esc_html_e( 'Collapse', 'csa-wp-user-tracker' ); ?></span>
+						<span class="csa-wp-user-tracker-toggle-open"><span class="csa-wp-user-tracker-toggle-icon" aria-hidden="true">+</span><?php esc_html_e( 'Expand settings', 'csa-wp-user-tracker' ); ?></span>
+						<span class="csa-wp-user-tracker-toggle-close"><span class="csa-wp-user-tracker-toggle-icon" aria-hidden="true">-</span><?php esc_html_e( 'Collapse settings', 'csa-wp-user-tracker' ); ?></span>
 					</span>
 				</span>
 			</summary>
