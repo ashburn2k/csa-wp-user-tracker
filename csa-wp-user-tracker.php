@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.6
+ * Version: 0.1.7
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.6' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.7' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -408,13 +408,16 @@ final class CSA_WP_User_Tracker {
 			'digest_sent'   => __( 'Pending email digest sent.', 'csa-wp-user-tracker' ),
 			'digest_empty'  => __( 'There are no pending email updates to send.', 'csa-wp-user-tracker' ),
 			'digest_failed' => __( 'The pending email digest could not be sent.', 'csa-wp-user-tracker' ),
+			'test_sent'     => __( 'Test email sent.', 'csa-wp-user-tracker' ),
+			'test_failed'   => __( 'The test email could not be sent.', 'csa-wp-user-tracker' ),
+			'test_empty'    => __( 'Add and save at least one email recipient before sending a test.', 'csa-wp-user-tracker' ),
 		);
 
 		if ( empty( $messages[ $notice ] ) ) {
 			return;
 		}
 
-		$class = 'digest_failed' === $notice ? 'notice notice-error is-dismissible' : 'notice notice-success is-dismissible';
+		$class = in_array( $notice, array( 'digest_failed', 'test_failed', 'test_empty' ), true ) ? 'notice notice-error is-dismissible' : 'notice notice-success is-dismissible';
 		?>
 		<div class="<?php echo esc_attr( $class ); ?>">
 			<p><?php echo esc_html( $messages[ $notice ] ); ?></p>
@@ -523,11 +526,19 @@ final class CSA_WP_User_Tracker {
 			</table>
 			<?php submit_button( __( 'Save Email Updates', 'csa-wp-user-tracker' ) ); ?>
 		</form>
-		<form method="post" style="margin: -8px 0 20px;">
-			<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
-			<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
-			<?php submit_button( sprintf( __( 'Send Pending Digest Now (%d)', 'csa-wp-user-tracker' ), absint( $queue_count ) ), 'secondary', 'submit', false ); ?>
-		</form>
+		<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: -8px 0 4px;">
+			<form method="post">
+				<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+				<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
+				<?php submit_button( sprintf( __( 'Send Pending Digest Now (%d)', 'csa-wp-user-tracker' ), absint( $queue_count ) ), 'secondary', 'submit', false ); ?>
+			</form>
+			<form method="post">
+				<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+				<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_test_email">
+				<?php submit_button( __( 'Send Test Email', 'csa-wp-user-tracker' ), 'secondary', 'submit', false ); ?>
+			</form>
+		</div>
+		<p class="description" style="margin: 0 0 20px;"><?php esc_html_e( 'The test email uses the saved recipients above. Save changes before testing new recipients.', 'csa-wp-user-tracker' ); ?></p>
 		<hr>
 		<?php
 	}
@@ -574,6 +585,15 @@ final class CSA_WP_User_Tracker {
 			}
 
 			self::redirect_to_admin_page( array( 'csa_email_notice' => empty( $result['failed'] ) ? 'digest_empty' : 'digest_failed' ) );
+		}
+
+		if ( 'send_test_email' === $action ) {
+			$settings = self::email_settings();
+			if ( empty( $settings['recipients'] ) ) {
+				self::redirect_to_admin_page( array( 'csa_email_notice' => 'test_empty' ) );
+			}
+
+			self::redirect_to_admin_page( array( 'csa_email_notice' => self::send_test_email_update( $settings ) ? 'test_sent' : 'test_failed' ) );
 		}
 	}
 
@@ -1657,6 +1677,38 @@ final class CSA_WP_User_Tracker {
 		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
 
 		return (bool) wp_mail( $settings['recipients'], $subject, self::build_email_body( $rows, $digest ), $headers );
+	}
+
+	/**
+	 * Send a test email to the saved notification recipients.
+	 *
+	 * @param array $settings Email settings.
+	 * @return bool
+	 */
+	private static function send_test_email_update( $settings ) {
+		if ( empty( $settings['recipients'] ) ) {
+			return false;
+		}
+
+		$site_name    = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+		$current_user = wp_get_current_user();
+		$body         = array(
+			__( 'This is a test email from CSA WP User Tracker.', 'csa-wp-user-tracker' ),
+			'',
+			sprintf( __( 'Site: %s', 'csa-wp-user-tracker' ), home_url( '/' ) ),
+			sprintf( __( 'Sent by: %s', 'csa-wp-user-tracker' ), $current_user instanceof WP_User && $current_user->user_login ? $current_user->user_login : __( 'Unknown user', 'csa-wp-user-tracker' ) ),
+			sprintf( __( 'Send timing: %s', 'csa-wp-user-tracker' ), $settings['cadence'] ),
+			sprintf( __( 'Watching: %s', 'csa-wp-user-tracker' ), implode( ', ', $settings['post_types'] ) ),
+			'',
+			__( 'If you received this message, WordPress mail is working for the saved recipients.', 'csa-wp-user-tracker' ),
+		);
+		$subject      = sprintf(
+			/* translators: %s: site name */
+			__( '[%s] CSA WP User Tracker test email', 'csa-wp-user-tracker' ),
+			$site_name
+		);
+
+		return (bool) wp_mail( $settings['recipients'], $subject, implode( "\n", $body ), array( 'Content-Type: text/plain; charset=UTF-8' ) );
 	}
 
 	/**

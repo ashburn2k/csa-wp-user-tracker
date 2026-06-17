@@ -46,6 +46,8 @@ Delivery can be set to:
 
 The digest queue and email settings are stored in WordPress options and are excluded from activity logging.
 
+Use **Send Test Email** after saving recipients to verify the site can send mail through the configured WordPress mailer.
+
 ## Release Workflow
 
 This repository is the source of truth for the plugin. The Pantheon site receives a copy at:
