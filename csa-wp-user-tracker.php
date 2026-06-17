@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.16
+ * Version: 0.1.17
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.16' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.17' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -319,6 +319,15 @@ final class CSA_WP_User_Tracker {
 				.csa-wp-user-tracker-filter-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
 				.csa-wp-user-tracker-focus-toggle { align-items: center !important; background: #fff7ed; border: 1px solid #fdba74; border-radius: 6px; color: #1d2327; flex-direction: row !important; font-size: 13px !important; gap: 7px !important; grid-column: 1 / -1; padding: 9px 10px; }
 				.csa-wp-user-tracker-focus-note { background: #fffbeb; border-left: 4px solid #d97706; margin: 12px 0 0; padding: 9px 12px; }
+				.csa-wp-user-tracker-email-details { margin: 0; }
+				.csa-wp-user-tracker-email-summary { align-items: center; cursor: pointer; display: flex; gap: 14px; justify-content: space-between; list-style: none; }
+				.csa-wp-user-tracker-email-summary::-webkit-details-marker { display: none; }
+				.csa-wp-user-tracker-email-summary h2 { color: #0f172a; font-size: 18px; line-height: 1.3; margin: 0; }
+				.csa-wp-user-tracker-email-summary-meta { align-items: center; display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+				.csa-wp-user-tracker-toggle-pill { border: 1px solid #cbd5e1; border-radius: 999px; color: #334155; display: inline-flex; font-size: 12px; font-weight: 700; line-height: 1; padding: 7px 9px; }
+				.csa-wp-user-tracker-email-details[open] .csa-wp-user-tracker-toggle-open,
+				.csa-wp-user-tracker-email-details:not([open]) .csa-wp-user-tracker-toggle-close { display: none; }
+				.csa-wp-user-tracker-email-details-body { border-top: 1px solid #e2e8f0; margin-top: 14px; padding-top: 2px; }
 				.csa-wp-user-tracker-email-form { margin: 0; }
 				.csa-wp-user-tracker-settings-grid { display: grid; gap: 0 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 				.csa-wp-user-tracker-setting { border-top: 1px solid #e2e8f0; padding: 14px 0; }
@@ -362,6 +371,8 @@ final class CSA_WP_User_Tracker {
 				@media (max-width: 782px) {
 					.csa-wp-user-tracker-hero,
 					.csa-wp-user-tracker-panel-heading { display: block; }
+					.csa-wp-user-tracker-email-summary { align-items: flex-start; display: block; }
+					.csa-wp-user-tracker-email-summary-meta { justify-content: flex-start; margin-top: 12px; }
 					.csa-wp-user-tracker-version-pill,
 					.csa-wp-user-tracker-status-pill { margin-top: 12px; }
 					.csa-wp-user-tracker-stat-grid,
@@ -911,18 +922,27 @@ final class CSA_WP_User_Tracker {
 		$editable_roles = $roles ? $roles->roles : array();
 		$queue_count    = count( self::email_queue() );
 		$next_digest    = wp_next_scheduled( self::EMAIL_DIGEST_HOOK );
+		$details_open   = isset( $_GET['csa_email_notice'] );
 		?>
-		<div class="csa-wp-user-tracker-panel-heading">
-			<div>
-				<p class="csa-wp-user-tracker-eyebrow"><?php esc_html_e( 'Notifications', 'csa-wp-user-tracker' ); ?></p>
-				<h2><?php esc_html_e( 'Email Updates', 'csa-wp-user-tracker' ); ?></h2>
-				<p class="csa-wp-user-tracker-panel-subtitle"><?php esc_html_e( 'Send immediate or digest emails when matching page or post activity is logged.', 'csa-wp-user-tracker' ); ?></p>
-			</div>
-			<span class="<?php echo esc_attr( $settings['enabled'] ? 'csa-wp-user-tracker-status-pill is-on' : 'csa-wp-user-tracker-status-pill is-off' ); ?>">
-				<?php echo esc_html( $settings['enabled'] ? __( 'Enabled', 'csa-wp-user-tracker' ) : __( 'Off', 'csa-wp-user-tracker' ) ); ?>
-			</span>
-		</div>
-		<form method="post" class="csa-wp-user-tracker-email-form">
+		<details class="csa-wp-user-tracker-email-details" <?php echo $details_open ? 'open' : ''; ?>>
+			<summary class="csa-wp-user-tracker-email-summary">
+				<div>
+					<p class="csa-wp-user-tracker-eyebrow"><?php esc_html_e( 'Notifications', 'csa-wp-user-tracker' ); ?></p>
+					<h2><?php esc_html_e( 'Email Updates', 'csa-wp-user-tracker' ); ?></h2>
+					<p class="csa-wp-user-tracker-panel-subtitle"><?php esc_html_e( 'Expand to edit recipients, watched events, actor filters, and timing.', 'csa-wp-user-tracker' ); ?></p>
+				</div>
+				<span class="csa-wp-user-tracker-email-summary-meta">
+					<span class="<?php echo esc_attr( $settings['enabled'] ? 'csa-wp-user-tracker-status-pill is-on' : 'csa-wp-user-tracker-status-pill is-off' ); ?>">
+						<?php echo esc_html( $settings['enabled'] ? __( 'Enabled', 'csa-wp-user-tracker' ) : __( 'Off', 'csa-wp-user-tracker' ) ); ?>
+					</span>
+					<span class="csa-wp-user-tracker-toggle-pill">
+						<span class="csa-wp-user-tracker-toggle-open"><?php esc_html_e( 'Expand', 'csa-wp-user-tracker' ); ?></span>
+						<span class="csa-wp-user-tracker-toggle-close"><?php esc_html_e( 'Collapse', 'csa-wp-user-tracker' ); ?></span>
+					</span>
+				</span>
+			</summary>
+			<div class="csa-wp-user-tracker-email-details-body">
+				<form method="post" class="csa-wp-user-tracker-email-form">
 			<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
 			<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="save">
 			<div class="csa-wp-user-tracker-settings-grid">
@@ -1000,20 +1020,22 @@ final class CSA_WP_User_Tracker {
 			<div class="csa-wp-user-tracker-form-actions">
 				<?php submit_button( __( 'Save Email Updates', 'csa-wp-user-tracker' ), 'primary', 'submit', false ); ?>
 			</div>
-		</form>
-		<div class="csa-wp-user-tracker-email-actions">
-			<form method="post">
-				<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
-				<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
-				<?php submit_button( sprintf( __( 'Send Pending Digest Now (%d)', 'csa-wp-user-tracker' ), absint( $queue_count ) ), 'secondary', 'submit', false ); ?>
-			</form>
-			<form method="post">
-				<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
-				<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_test_email">
-				<?php submit_button( __( 'Send Test Email', 'csa-wp-user-tracker' ), 'secondary', 'submit', false ); ?>
-			</form>
-		</div>
-		<p class="description csa-wp-user-tracker-form-note"><?php esc_html_e( 'The test email uses the saved recipients above. Save changes before testing new recipients.', 'csa-wp-user-tracker' ); ?></p>
+				</form>
+				<div class="csa-wp-user-tracker-email-actions">
+					<form method="post">
+						<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+						<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_digest_now">
+						<?php submit_button( sprintf( __( 'Send Pending Digest Now (%d)', 'csa-wp-user-tracker' ), absint( $queue_count ) ), 'secondary', 'submit', false ); ?>
+					</form>
+					<form method="post">
+						<?php wp_nonce_field( self::EMAIL_SETTINGS_NONCE_ACTION ); ?>
+						<input type="hidden" name="csa_wp_user_tracker_email_settings_action" value="send_test_email">
+						<?php submit_button( __( 'Send Test Email', 'csa-wp-user-tracker' ), 'secondary', 'submit', false ); ?>
+					</form>
+				</div>
+				<p class="description csa-wp-user-tracker-form-note"><?php esc_html_e( 'The test email uses the saved recipients above. Save changes before testing new recipients.', 'csa-wp-user-tracker' ); ?></p>
+			</div>
+		</details>
 		<?php
 	}
 
