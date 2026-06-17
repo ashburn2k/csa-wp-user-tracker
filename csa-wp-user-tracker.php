@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.8
+ * Version: 0.1.9
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.8' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.9' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -371,25 +371,42 @@ final class CSA_WP_User_Tracker {
 				</tbody>
 			</table>
 			<?php if ( $total_pages > 1 ) : ?>
-				<div class="tablenav">
-					<div class="tablenav-pages">
-						<?php
-						echo wp_kses_post(
-							paginate_links(
-								array(
-									'base'      => add_query_arg( 'paged', '%#%', $base_url ),
-									'format'    => '',
-									'current'   => $page,
-									'total'     => $total_pages,
-									'prev_text' => __( '&laquo;', 'csa-wp-user-tracker' ),
-									'next_text' => __( '&raquo;', 'csa-wp-user-tracker' ),
-								)
-							)
-						);
-						?>
-					</div>
-				</div>
+				<?php self::render_admin_pagination( $page, $total_pages, $base_url ); ?>
 			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render activity-list pagination with stable admin layout.
+	 *
+	 * @param int    $page Current page.
+	 * @param int    $total_pages Total pages.
+	 * @param string $base_url Base URL.
+	 */
+	private static function render_admin_pagination( $page, $total_pages, $base_url ) {
+		$links = paginate_links(
+			array(
+				'base'      => add_query_arg( 'paged', '%#%', $base_url ),
+				'format'    => '',
+				'current'   => $page,
+				'total'     => $total_pages,
+				'prev_text' => __( '&laquo;', 'csa-wp-user-tracker' ),
+				'next_text' => __( '&raquo;', 'csa-wp-user-tracker' ),
+				'type'      => 'array',
+			)
+		);
+
+		if ( empty( $links ) || ! is_array( $links ) ) {
+			return;
+		}
+		?>
+		<div class="tablenav" style="height: auto; margin: 12px 0;">
+			<div class="tablenav-pages" style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; float: none; width: 100%;">
+				<?php foreach ( $links as $link ) : ?>
+					<span style="display: inline-flex; align-items: center;"><?php echo wp_kses_post( $link ); ?></span>
+				<?php endforeach; ?>
+			</div>
 		</div>
 		<?php
 	}
