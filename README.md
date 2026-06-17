@@ -49,6 +49,8 @@ Delivery can be set to:
 
 Matching content events include create, update, status change, trash, restore, and delete actions for selected post types.
 
+Email messages show the page/post title and public link instead of the internal WordPress object ID. New content-event log rows store the permalink so trash and permanent-delete notifications can still include the page/post link when available.
+
 The digest queue and email settings are stored in WordPress options and are excluded from activity logging.
 
 Use **Send Test Email** after saving recipients to verify the site can send mail through the configured WordPress mailer.

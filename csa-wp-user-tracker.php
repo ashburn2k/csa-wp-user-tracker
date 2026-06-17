@@ -3,7 +3,7 @@
  * Plugin Name: CSA WP User Tracker
  * Plugin URI: https://github.com/ashburn2k/csa-wp-user-tracker
  * Description: Tracks activity for logged-in WordPress users whose roles are not limited to subscriber.
- * Version: 0.1.13
+ * Version: 0.1.14
  * Author: Hui Zhang
  * Text Domain: csa-wp-user-tracker
  * Update URI: https://github.com/ashburn2k/csa-wp-user-tracker
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.13' );
+define( 'CSA_WP_USER_TRACKER_VERSION', '0.1.14' );
 define( 'CSA_WP_USER_TRACKER_FILE', __FILE__ );
 
 require_once __DIR__ . '/includes/class-csa-wp-user-tracker-github-updater.php';
@@ -644,12 +644,26 @@ final class CSA_WP_User_Tracker {
 	 * @return array
 	 */
 	private static function row_context_array( $row ) {
-		if ( empty( $row->context ) || ! is_string( $row->context ) ) {
+		return self::context_to_array( isset( $row->context ) ? $row->context : '' );
+	}
+
+	/**
+	 * Decode context data safely.
+	 *
+	 * @param mixed $context Context data.
+	 * @return array
+	 */
+	private static function context_to_array( $context ) {
+		if ( is_array( $context ) ) {
+			return $context;
+		}
+
+		if ( empty( $context ) || ! is_string( $context ) ) {
 			return array();
 		}
 
-		$context = json_decode( $row->context, true );
-		return is_array( $context ) ? $context : array();
+		$decoded = json_decode( $context, true );
+		return is_array( $decoded ) ? $decoded : array();
 	}
 
 	/**
@@ -1100,7 +1114,7 @@ final class CSA_WP_User_Tracker {
 			$post->post_type,
 			$post_id,
 			get_the_title( $post_id ),
-			array( 'status' => $post->post_status )
+			self::post_email_context( $post_id, array( 'status' => $post->post_status ) )
 		);
 	}
 
@@ -1121,9 +1135,12 @@ final class CSA_WP_User_Tracker {
 			$post->post_type,
 			$post->ID,
 			get_the_title( $post->ID ),
-			array(
+			self::post_email_context(
+				$post->ID,
+				array(
 				'from' => $old_status,
 				'to'   => $new_status,
+				)
 			)
 		);
 	}
@@ -1136,7 +1153,7 @@ final class CSA_WP_User_Tracker {
 	public static function log_trashed_post( $post_id ) {
 		$post = get_post( $post_id );
 		if ( $post ) {
-			self::log( 'post_trashed', $post->post_type, $post_id, get_the_title( $post_id ) );
+			self::log( 'post_trashed', $post->post_type, $post_id, get_the_title( $post_id ), self::post_email_context( $post_id ) );
 		}
 	}
 
@@ -1148,7 +1165,7 @@ final class CSA_WP_User_Tracker {
 	public static function log_untrashed_post( $post_id ) {
 		$post = get_post( $post_id );
 		if ( $post ) {
-			self::log( 'post_untrashed', $post->post_type, $post_id, get_the_title( $post_id ) );
+			self::log( 'post_untrashed', $post->post_type, $post_id, get_the_title( $post_id ), self::post_email_context( $post_id ) );
 		}
 	}
 
@@ -1160,8 +1177,24 @@ final class CSA_WP_User_Tracker {
 	public static function log_deleted_post( $post_id ) {
 		$post = get_post( $post_id );
 		if ( $post ) {
-			self::log( 'post_deleted', $post->post_type, $post_id, $post->post_title );
+			self::log( 'post_deleted', $post->post_type, $post_id, $post->post_title, self::post_email_context( $post_id ) );
 		}
+	}
+
+	/**
+	 * Context used by email updates for post/page events.
+	 *
+	 * @param int   $post_id Post ID.
+	 * @param array $context Extra context.
+	 * @return array
+	 */
+	private static function post_email_context( $post_id, $context = array() ) {
+		$permalink = get_permalink( $post_id );
+		if ( $permalink && ! is_wp_error( $permalink ) ) {
+			$context['permalink'] = $permalink;
+		}
+
+		return $context;
 	}
 
 	/**
@@ -2092,12 +2125,24 @@ final class CSA_WP_User_Tracker {
 		$lines[] = '';
 
 		foreach ( $rows as $row ) {
+			$object_type = self::admin_object_type_label( $row['object_type'] );
+			$object_name = trim( wp_specialchars_decode( $row['object_name'], ENT_QUOTES ) );
+			$object_url  = self::email_object_url( $row );
+
 			$lines[] = sprintf(
-				'%s #%d: %s',
-				ucfirst( $row['object_type'] ),
-				absint( $row['object_id'] ),
-				wp_specialchars_decode( $row['object_name'], ENT_QUOTES )
+				/* translators: 1: object type, 2: object title */
+				__( '%1$s title: %2$s', 'csa-wp-user-tracker' ),
+				$object_type,
+				'' !== $object_name ? $object_name : __( '(no title)', 'csa-wp-user-tracker' )
 			);
+			if ( $object_url ) {
+				$lines[] = sprintf(
+					/* translators: 1: object type, 2: public URL */
+					__( '%1$s link: %2$s', 'csa-wp-user-tracker' ),
+					$object_type,
+					$object_url
+				);
+			}
 			$lines[] = sprintf( __( 'Action: %s', 'csa-wp-user-tracker' ), self::email_action_label( $row['action'] ) );
 			$lines[] = sprintf( __( 'Time: %s', 'csa-wp-user-tracker' ), mysql2date( 'Y-m-d H:i:s', $row['occurred_at'], true ) );
 			$lines[] = sprintf( __( 'Updated by: %1$s (%2$s #%3$d)', 'csa-wp-user-tracker' ), $row['display_name'] ? $row['display_name'] : $row['user_login'], $row['user_login'], absint( $row['user_id'] ) );
@@ -2105,7 +2150,7 @@ final class CSA_WP_User_Tracker {
 
 			$edit_url = self::edit_object_url( $row );
 			if ( $edit_url ) {
-				$lines[] = sprintf( __( 'Edit: %s', 'csa-wp-user-tracker' ), $edit_url );
+				$lines[] = sprintf( __( 'Edit in WordPress: %s', 'csa-wp-user-tracker' ), $edit_url );
 			}
 
 			if ( $row['request_uri'] ) {
@@ -2116,6 +2161,26 @@ final class CSA_WP_User_Tracker {
 		}
 
 		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Get the public URL for a tracked post/page row.
+	 *
+	 * @param array $row Log row.
+	 * @return string
+	 */
+	private static function email_object_url( $row ) {
+		if ( ! in_array( $row['object_type'], array( 'post', 'page' ), true ) || empty( $row['object_id'] ) ) {
+			return '';
+		}
+
+		$context = self::context_to_array( isset( $row['context'] ) ? $row['context'] : '' );
+		if ( ! empty( $context['permalink'] ) ) {
+			return esc_url_raw( $context['permalink'] );
+		}
+
+		$permalink = get_permalink( absint( $row['object_id'] ) );
+		return $permalink && ! is_wp_error( $permalink ) ? esc_url_raw( $permalink ) : '';
 	}
 
 	/**
